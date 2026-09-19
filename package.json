@@ -2,6 +2,7 @@
   "name": "personal-learning-notes",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.19.0",
   "scripts": {
     "dev": "node scripts/site.mjs dev",
     "build": "node scripts/site.mjs build",

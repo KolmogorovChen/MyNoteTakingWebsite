@@ -1,11 +1,13 @@
 import { defineConfig } from 'vitepress';
 import fs from 'node:fs';
 const catalog = JSON.parse(fs.readFileSync(new URL('./catalog.json', import.meta.url), 'utf8'));
+const base = process.env.SITE_BASE || '/';
 export default defineConfig({
+  base,
   lang: 'zh-CN',
   title: '我的笔记',
   description: '个人大模型学习笔记',
-  head: [['link', { rel: 'icon', href: '/favicon.svg' }]],
+  head: [['link', { rel: 'icon', href: `${base}favicon.svg` }]],
   lastUpdated: false,
   markdown: {
     math: true,

@@ -27,7 +27,17 @@ npm run dev
 
 提交原始笔记、figures、site、scripts、package.json、pnpm-lock.yaml、pnpm-workspace.yaml、start-notes.cmd、.gitignore 和本说明。node_modules 和 .notes-site 是依赖或生成结果，不提交。
 
-已初始化本地 Git 仓库（main 分支），尚未创建远程仓库、提交或推送。后续连接私有仓库；正式上线前需另外配置网站访问验证，私有仓库不等于私有网站。
+仓库：https://github.com/KolmogorovChen/MyNoteTakingWebsite
+
+网站：https://kolmogorovchen.github.io/MyNoteTakingWebsite/
+
+仓库和网站均公开。推送 main 后，GitHub Actions 自动构建并发布全部收录的笔记及图片。发布进度见仓库 Actions 页面；本地运行仍使用 http://127.0.0.1:5173 。
+
+```sh
+git add .
+git commit -m "更新笔记"
+git push
+```
 
 ## 构建
 

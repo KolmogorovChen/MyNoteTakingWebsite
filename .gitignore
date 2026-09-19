@@ -1,6 +1,7 @@
 node_modules/
 .pnpm-store/
 .notes-site/
+.cloudflare-output/
 .sites-runtime/
 .local-runtime/
 *.log
