@@ -1,4 +1,4 @@
-# Transformer 学习笔记：从序列建模到训练与生成
+# Transformer 学习笔记
 
 ## 一、问题与起源：Transformer 究竟学习什么
 
