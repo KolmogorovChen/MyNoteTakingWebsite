@@ -275,30 +275,32 @@ $$
 
 $$
 \begin{aligned}
-m_i^{N_1} =\max_{1\le j\le N_1}s_{ij}
-\end{aligned}
+m_i^{N_1} &=\max_{1\le j\le N_1}s_{ij}
 \\[5pt]
 \ell_i^{N_1}
-=
+&=
 \sum_{r=1}^{N_1}
 \exp(s_{ir}-m_i^{N_1})
 \\[5pt]
 A_i^{N_1} 
-=
+&=
 \sum_{r=1}^{N_1}
 \exp(s_{ir}-m_i^{N_1})v_r
+\end{aligned}
 $$
 
 现在处理 $K_2,V_2$：
 
 $$
-m_i^{N_2} = \max(m_i^{N_1}, \max_{N_1+1 \le j \le N_2}s_{ij})
+\begin{aligned}
+m_i^{N_2} &= \max(m_i^{N_1}, \max_{N_1+1 \le j \le N_2}s_{ij})
 \\[5pt]
-l_i^{N_2} = (m_i^{N_1} - m_i^{N_2}) l_{i}^{N_1} + \sum_{r=N_1 + 1}^{N_2}
+l_i^{N_2} &= (m_i^{N_1} - m_i^{N_2}) l_{i}^{N_1} + \sum_{r=N_1 + 1}^{N_2}
 \exp(s_{ir}-m_i^{N_2})
 \\[5pt]
-A_i^{N_2} = (m_i^{N_1} - m_i^{N_2}) A_{i}^{N_1} + \sum_{r=N_1 + 1}^{N_2}
+A_i^{N_2} &= (m_i^{N_1} - m_i^{N_2}) A_{i}^{N_1} + \sum_{r=N_1 + 1}^{N_2}
 \exp(s_{ir}-m_i^{N_2})v_r
+\end{aligned}
 $$
 
 处理完所有 $K,V$ 之后，最终输出为：
