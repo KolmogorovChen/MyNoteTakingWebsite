@@ -1,0 +1,16 @@
+{
+  "name": "personal-learning-notes",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/site.mjs dev",
+    "build": "node scripts/site.mjs build",
+    "preview": "vitepress preview .notes-site --host 127.0.0.1 --port 5173"
+  },
+  "dependencies": {
+    "vitepress": "1.6.4",
+    "vue": "^3.5.0",
+    "markdown-it-mathjax3": "^4.3.2",
+    "mermaid": "^11.0.0"
+  }
+}

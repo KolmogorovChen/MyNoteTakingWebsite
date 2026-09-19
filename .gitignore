@@ -1,0 +1,9 @@
+node_modules/
+.pnpm-store/
+.notes-site/
+.sites-runtime/
+.local-runtime/
+*.log
+.env
+.env.*
+!.env.example
