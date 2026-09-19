@@ -139,6 +139,7 @@ Transformer 的核心突破可以用一句话概括：**完全抛弃循环结构
 #### 1.1 Tokenizer：把文本变成离散符号序列
 
 将自然语言字符串切分为模型可识别的最小单元（Tokens），并将其映射为数字索引
+
 $$
 \text{原始文本}\longrightarrow\text{Token 序列}
 \longrightarrow\text{Token ID 序列}.
