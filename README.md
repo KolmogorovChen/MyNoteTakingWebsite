@@ -29,9 +29,9 @@ npm run dev
 
 仓库：https://github.com/KolmogorovChen/MyNoteTakingWebsite
 
-网站：https://kolmogorovchen.github.io/MyNoteTakingWebsite/
+网站：https://my-note-taking-website.pages.dev/
 
-仓库和网站均公开。推送 main 后，GitHub Actions 自动构建并发布全部收录的笔记及图片。发布进度见仓库 Actions 页面；本地运行仍使用 http://127.0.0.1:5173 。
+仓库和网站均公开。推送 main 后，Cloudflare Pages 自动构建并发布全部收录的笔记及图片；本地运行仍使用 http://127.0.0.1:5173 。
 
 ```sh
 git add .
