@@ -17,7 +17,7 @@ $$
 
 FlashAttention 的关键是：
 
-不显式保存完整的 \(QK^\top \in \mathbb{R}^{n\times n}\) 注意力矩阵，而是分块计算，并在 GPU SRAM 中完成局部计算，只把最终结果写回 HBM。
+不显式保存完整的 $QK^\top \in \mathbb{R}^{n\times n}$ 注意力矩阵，而是分块计算，并在 GPU SRAM 中完成局部计算，只把最终结果写回 HBM。
 
 原始 FlashAttention 论文将其定义为一种 IO-aware exact attention algorithm，核心是通过 tiling 减少 GPU 高带宽显存 HBM 与片上 SRAM 之间的数据读写。
 
@@ -35,7 +35,7 @@ $$
 O(n^2)
 $$
 
-当序列长度 \(n\) 很大时，\(n^2\) 会非常夸张。
+当序列长度 $n$ 很大时，$n^2$ 会非常夸张。
 
 例如：$n = 8192$，则注意力矩阵大小为 $8192^2 = 67,108,864$，如果使用 FP16，每个元素 2 bytes，那么一个矩阵大约需要：
 
@@ -168,7 +168,7 @@ q_{i2}k_{j1}^T & q_{i2}k_{j2}^T & q_{i2}k_{j3}^T
 \end{pmatrix} \in \mathbb{R}^{B_q \times B_k}
 $$
 
-这个小矩阵 \(S_{ij}\) 会放在 SRAM / shared memory 中，用完就丢，不写回 HBM。
+这个小矩阵 $S_{ij}$ 会放在 SRAM / shared memory 中，用完就丢，不写回 HBM。
 
 接下来会经过局部 Softmax 更新，得到 $\text{softmax}(S_{ij})$ ，具体如何处理后面再讨论。
 
@@ -347,7 +347,7 @@ m_i^{(0)}=-\infty,
 A_i^{(0)}=0.
 $$
 
-处理第 \(j\) 个 KV block 时，我们已经有 $m_i^{(j-1)}, \quad \ell_i^{(j-1)}, \quad A_i^{(j-1)}$。
+处理第 $j$ 个 KV block 时，我们已经有 $m_i^{(j-1)}, \quad \ell_i^{(j-1)}, \quad A_i^{(j-1)}$。
 
 先计算：
 $$
