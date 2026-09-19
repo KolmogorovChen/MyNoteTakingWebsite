@@ -554,9 +554,10 @@ $$
 
 对第 $r$ 个头：
 $$
-head_i = \text{Attention}(XW_Q^i, XW_K^i, XW_V^i)\\[6pt]
-  
-  \text{MultiHead}(X) = \text{Concat}(head_1, ..., head_h)W_O，  \qquad W_O\in\mathbb R^{hd_v\times d}
+\begin{aligned}
+head_i &= \text{Attention}(XW_Q^i, XW_K^i, XW_V^i)\\[6pt]
+\text{MultiHead}(X) &= \text{Concat}(head_1, ..., head_h)W_O，  \qquad W_O\in\mathbb R^{hd_v\times d}
+\end{aligned}
 $$
 
 **一个完整的维度例子**
@@ -1146,7 +1147,7 @@ $$
 \boxed{ \hat y_t = \arg\max_{v\in\mathcal V} p_\theta(v\mid x,\hat y_{<t}) }
 $$
 
-选好后，把这个 token 加入上下文，再预测下一个，直到生成 \(\texttt{EOS}\) 或达到长度上限。
+选好后，把这个 token 加入上下文，再预测下一个，直到生成 $\texttt{EOS}$ 或达到长度上限。
 
 它的特点是：每一步只选当前概率最大的 token，只维护一条生成路径，一旦选定，就不会回头。
 
@@ -1170,7 +1171,7 @@ $$
 y^\star = \arg\max_{y} p_\theta(y\mid x) = \arg\max_y \sum_{t=1}^{|y|} \log p_\theta(y_t\mid x,y_{<t}). 
 $$
 
-但固定长度 \(T\) 的候选序列就有
+但固定长度 $T$ 的候选序列就有
 
 $$
 |\mathcal V|^T
@@ -1180,9 +1181,9 @@ $$
 
 ##### 1. 具体步骤
 
-设 **beam width 为 \(B\)**，即每一步最多保留 \(B\) 条候选路径。
+设 **beam width 为 $B$**，即每一步最多保留 $B$ 条候选路径。
 
-对一个长度为 \(t\) 的前缀，定义累计分数：
+对一个长度为 $t$ 的前缀，定义累计分数：
 
 $$
 \begin{aligned}
@@ -1198,15 +1199,15 @@ $$
 1. 对当前保留的每条前缀，计算下一个 token 的概率分布。
 2. 将每条前缀扩展为候选新路径。
 3. 计算新路径的累计分数。
-4. **在所有扩展路径中，统一选出分数最高的 \(B\) 条。**
+4. **在所有扩展路径中，统一选出分数最高的 $B$ 条。**
 
-设当前候选集合为 \(\mathcal B_{t-1}\)（上一步**筛选后**保留的候选序列），则这一步**扩展后**的全部候选序列：
+设当前候选集合为 $\mathcal B_{t-1}$（上一步**筛选后**保留的候选序列），则这一步**扩展后**的全部候选序列：
 
 $$
 \mathcal C_t = \left\{ b\mathbin{\Vert}v: b\in\mathcal B_{t-1},\ v\in\mathcal V \right\},
 $$
 
-其中 \(\Vert\) 表示拼接。扩展一个新 Token $v$，扩展路径的分数为
+其中 $\Vert$ 表示拼接。扩展一个新 Token $v$，扩展路径的分数为
 
 $$
 s(b\mathbin{\Vert}v) = s(b)+\log p_\theta(v\mid x,b), 
@@ -1218,7 +1219,7 @@ $$
 \boxed{ \mathcal B_t = \operatorname{TopB}_{c\in\mathcal C_t}s(c) }
 $$
 
-这里尤其要注意：**不是每条路径分别保留 \(B\) 个，而是所有路径扩展后，总共保留 \(B\) 个。**
+这里尤其要注意：**不是每条路径分别保留 $B$ 个，而是所有路径扩展后，总共保留 $B$ 个。**
 
 --------
 
@@ -1251,7 +1252,7 @@ $$
 
 ##### 3. 三个需要理解的细节
 
-- **它仍然是近似搜索**。某条前缀一旦被剪掉，即使它后面有非常好的延续，也无法重新找回。因此，有限的 \(B\) 不保证找到全局最优解。在相同评分与停止规则下，\(B=1\) 就退化为贪心解码。
+- **它仍然是近似搜索**。某条前缀一旦被剪掉，即使它后面有非常好的延续，也无法重新找回。因此，有限的 $B$ 不保证找到全局最优解。在相同评分与停止规则下，$B=1$ 就退化为贪心解码。
 
 - 因为每个条件概率都不超过 1，
 
@@ -1266,7 +1267,7 @@ $$
   s_{\mathrm{norm}}(y) = \frac{1}{|y|^\alpha} \sum_{t=1}^{|y|} \log p_\theta(y_t\mid x,y_{<t}), \qquad \alpha\ge0.
   $$
   
-  其中 \(\alpha=0\) 表示不做归一化。**使用这个评分后，优化目标就不再是原始序列概率本身。**
+  其中 $\alpha=0$ 表示不做归一化。**使用这个评分后，优化目标就不再是原始序列概率本身。**
 
 -----
 
@@ -1276,7 +1277,7 @@ Sampling（采样）的核心是：**模型给出下一个 token 的概率分布
 
 ##### 1. 一步采样
 
-假设输入为 \(x\)，已经生成了前缀 \(y_{<t}\)。模型在第 \(t\) 步输出 logits：
+假设输入为 $x$，已经生成了前缀 $y_{<t}$。模型在第 $t$ 步输出 logits：
 
 $$
 z_t=f_\theta(x,y_{<t})\in\mathbb R^{|\mathcal V|}. 
@@ -1310,7 +1311,7 @@ Y_3&\sim p_\theta(\cdot\mid x,Y_1,Y_2),\\[5pt]
 &\ \vdots \end{aligned}
 $$
 
-直到抽到 \(\texttt{EOS}\) 或达到长度限制。
+直到抽到 $\texttt{EOS}$ 或达到长度限制。
 
 所以，逐步条件采样满足
 
@@ -1334,9 +1335,9 @@ $$
 \underbrace{0.8}_{\text{少量高概率候选}} + \underbrace{0.2}_{\text{大量低概率候选}} =1. 
 $$
 
-虽然尾部每个 token 都很难抽中，但**抽中低概率 token 的总概率仍是 \(20\%\)**。低概率 token 不一定错误，但其中可能包含不适合当前语境的延续。
+虽然尾部每个 token 都很难抽中，但**抽中低概率 token 的总概率仍是 $20\%$**。低概率 token 不一定错误，但其中可能包含不适合当前语境的延续。
 
-因此，实际采样经常先构造调整后的分布 \(q_t\)，再抽样：
+因此，实际采样经常先构造调整后的分布 $q_t$，再抽样：
 
 $$
 \boxed{ p_t \xrightarrow{\text{调整}} q_t, \qquad Y_t\sim\operatorname{Categorical}(q_t). }
@@ -1348,7 +1349,7 @@ Temperature 调节概率的集中程度；Top-k 和 Top-p 限制允许抽取的�
 
 ##### 4. Temperature
 
-温度参数 \(\tau>0\) 的定义是
+温度参数 $\tau>0$ 的定义是
 
 $$
 q_t(v;\tau) = \frac{\exp(z_{t,v}/\tau)} {\sum_u\exp(z_{t,u}/\tau)}.
@@ -1362,12 +1363,12 @@ $$
 
 推导如下：
 
-原始 Softmax 的分母为 \(Z\)，则
+原始 Softmax 的分母为 $Z$，则
 $$
 p_t(v)=\frac{e^{z_{t,v}}}{Z} \quad\Longrightarrow\quad e^{z_{t,v}/\tau} = Z^{1/\tau}p_t(v)^{1/\tau}.
 $$
 
-将其代回温度公式，公共因子 \(Z^{1/\tau}\) 消去，就得到上述表达式。
+将其代回温度公式，公共因子 $Z^{1/\tau}$ 消去，就得到上述表达式。
 
 **温度调整后的分布会如何变化？**
 
@@ -1377,7 +1378,7 @@ $$
 \frac{q_t(a;\tau)}{q_t(b;\tau)} = \exp\left(\frac{z_{t,a}-z_{t,b}}{\tau}\right) = \left(\frac{p_t(a)}{p_t(b)}\right)^{1/\tau}.
 $$
 
-当 \(p_t(a)>p_t(b)\) 时，降低 \(\tau\) 会增大这个比值，让高概率 token 的优势更大。
+当 $p_t(a)>p_t(b)$ 时，降低 $\tau$ 会增大这个比值，让高概率 token 的优势更大。
 
 因此：
 
@@ -1389,7 +1390,7 @@ $$
 
 ##### 5. Top-k
 
-设 \(\mathcal K_t\) 是当前概率最高的 \(k\) 个 token 的集合。Top-k 定义
+设 $\mathcal K_t$ 是当前概率最高的 $k$ 个 token 的集合。Top-k 定义
 
 $$
 q_t(v) = \begin{cases} \dfrac{p_t(v)}{\sum_{u\in\mathcal K_t}p_t(u)}, &v\in\mathcal K_t,\\[6pt] 0,&v\notin\mathcal K_t. \end{cases}
@@ -1407,7 +1408,7 @@ Top-k 相当于在原有的输出上，选概率最高的 k 个 token，然后 S
 
 ##### 6. Top-p
 
-Top-p 又称 nucleus sampling。用 \(\rho\in(0,1]\) 表示阈值。
+Top-p 又称 nucleus sampling。用 $\rho\in(0,1]$ 表示阈值。
 
 先将概率降序排列：
 
@@ -1415,7 +1416,7 @@ $$
 p_t(v_{(1)})\ge p_t(v_{(2)})\ge\dots. 
 $$
 
-找到累计概率第一次达到或超过 \(\rho\) 的位置：
+找到累计概率第一次达到或超过 $\rho$ 的位置：
 
 $$
 m_t = \min\left\{ m: \sum_{i=1}^{m}p_t(v_{(i)})\ge\rho \right\}. 
@@ -1535,6 +1536,7 @@ $$
 
 
 故：
+
 $$
 (QK^T + M^{\text{causal}})V = \begin{pmatrix}
 q_0k_0^T & -\infty & -\infty & \cdots & -\infty \\[4pt]
@@ -1574,14 +1576,16 @@ $$
 
 可以看到：
 
-- 旧的 \(k_0,\dots,k_t\) 会继续被读取。
-- 旧的 \(v_0,\dots,v_t\) 会继续被读取。
-- 旧的 \(q_t\) 不再参与新位置的计算。
+- 旧的 $k_0,\dots,k_t$ 会继续被读取。
+- 旧的 $v_0,\dots,v_t$ 会继续被读取。
+- 旧的 $q_t$ 不再参与新位置的计算。
 
 所以，在推理第 $t$ 个词时，如果已经提前缓存了
+
 $$
 K_{0:t-1},\quad V_{0:t-1}
 $$
+
 这一步只需要计算新位置的
 
 $$
@@ -1610,7 +1614,7 @@ $$
 
 ##### 2. Cross Attention
 
-在第 \(\ell\) 层 Cross-Attention 中，Key、Value 来自 Encoder：
+在第 $\ell$ 层 Cross-Attention 中，Key、Value 来自 Encoder：
 
 $$
 K_{\mathrm{cross}} = H^{\mathrm{enc}}W_{K,\mathrm{cross}}, \\[5pt]
@@ -1625,7 +1629,7 @@ $$
 q_{\mathrm{cross},t} = r_tW_{Q,\mathrm{cross}},
 $$
 
-其中 \(r_t\) 表示进入该层 Cross-Attention 的当前位置表示。
+其中 $r_t$ 表示进入该层 Cross-Attention 的当前位置表示。
 
 于是
 
@@ -1639,7 +1643,7 @@ $$
 
 #### 4.3.3 独立的 KV Cache
 
-设 Decoder 有 \(L\) 层，则 Self-Attention 缓存为
+设 Decoder 有 $L$ 层，则 Self-Attention 缓存为
 
 $$
 \left\{ K_{\mathrm{self}}^{(\ell)}, V_{\mathrm{self}}^{(\ell)} \right\}_{\ell=1}^{L}. 
@@ -1657,7 +1661,7 @@ $$
 
 1. 新 token 的嵌入进入第 1 层，利用第 1 层历史缓存计算当前位置输出。
 2. 当前位置输出进入第 2 层，利用第 2 层历史缓存计算。
-3. 逐层继续，直到第 \(L\) 层。
+3. 逐层继续，直到第 $L$ 层。
 4. 最后一层当前位置的表示，用来预测下一个 token。
 
 **每一层都只计算新位置，但每一层都能够读取该层所有历史位置的 K、V。**对于Cross-Attention 中的KV Cache是同样的操作。
@@ -1670,12 +1674,12 @@ $$
 
 其中：
 
-- \(B\)：批大小；
-- \(H\)：注意力头数；
-- \(n\)：已经处理的目标位置数；
-- \(d_h\)：每个头的维度。
+- $B$：批大小；
+- $H$：注意力头数；
+- $n$：已经处理的目标位置数；
+- $d_h$：每个头的维度。
 
-新增一个 token 时，序列长度维度从 \(n\) 增加到 \(n+1\)。
+新增一个 token 时，序列长度维度从 $n$ 增加到 $n+1$。
 
 --------
 
@@ -1693,29 +1697,29 @@ $$
 
 | 计算类别                 | 无缓存                          | 有缓存                       | 渐近加速比   |
 | ------------------------ | ------------------------------- | ---------------------------- | ------------ |
-| QKV 投影 + 输出投影      | \(O(T^2d^2)\)                   | \(O(Td^2)\)                  | \(\sim T/2\) |
-| FFN                      | \(O(T^2dd_{\mathrm{ff}})\)      | \(O(Tdd_{\mathrm{ff}})\)     | \(\sim T/2\) |
-| Self-Attention 交互      | \(O(T^3d)\)                     | \(O(T^2d)\)                  | \(\sim T/3\) |
-| Cross-Attention 交互     | \(O(T^2Sd)\)                    | \(O(TSd)\)                   | \(\sim T/2\) |
-| Cross-Attention K/V 投影 | \(O(TSd^2)\)                    | \(O(Sd^2)\)                  | \(T\) 倍     |
+| QKV 投影 + 输出投影      | $O(T^2d^2)$                   | $O(Td^2)$                  | $\sim T/2$ |
+| FFN                      | $O(T^2dd_{\mathrm{ff}})$      | $O(Tdd_{\mathrm{ff}})$     | $\sim T/2$ |
+| Self-Attention 交互      | $O(T^3d)$                     | $O(T^2d)$                  | $\sim T/3$ |
+| Cross-Attention 交互     | $O(T^2Sd)$                    | $O(TSd)$                   | $\sim T/2$ |
+| Cross-Attention K/V 投影 | $O(TSd^2)$                    | $O(Sd^2)$                  | $T$ 倍     |
 
-> **为什么加速比不统一？** 逐位置独立的操作（投影、FFN）每步成本固定，累计为 \(\sum n \sim T^2/2\) vs \(T\)，加速比 \(\approx (T+1)/2\)。注意力交互的成本随前缀长度增长（无缓存时 \(n\) 个位置互相注意，成本 \(\propto n^2\)），累计为 \(\sum n^2 \sim T^3/3\) vs \(\sum n \sim T^2/2\)，加速比 \(\approx T/3\)。
+> **为什么加速比不统一？** 逐位置独立的操作（投影、FFN）每步成本固定，累计为 $\sum n \sim T^2/2$ vs $T$，加速比 $\approx (T+1)/2$。注意力交互的成本随前缀长度增长（无缓存时 $n$ 个位置互相注意，成本 $\propto n^2$），累计为 $\sum n^2 \sim T^3/3$ vs $\sum n \sim T^2/2$，加速比 $\approx T/3$。
 
 ##### 2. 符号约定与 FLOPs 计数
 
 | 符号                | 含义                                |
 | ------------------- | ----------------------------------- |
-| \(T\)               | 生成过程处理的目标位置总数          |
-| \(n\)               | 当前前缀长度，\(1\le n\le T\)       |
-| \(S\)               | 源句长度（仅 Cross-Attention 涉及） |
-| \(d\)               | 模型维度 \(d_{\mathrm{model}}\)     |
-| \(H\)               | 注意力头数                          |
-| \(d_h\)             | 单头维度，\(d = H \cdot d_h\)       |
-| \(d_{\mathrm{ff}}\) | FFN 隐藏维度                        |
+| $T$               | 生成过程处理的目标位置总数          |
+| $n$               | 当前前缀长度，$1\le n\le T$       |
+| $S$               | 源句长度（仅 Cross-Attention 涉及） |
+| $d$               | 模型维度 $d_{\mathrm{model}}$     |
+| $H$               | 注意力头数                          |
+| $d_h$             | 单头维度，$d = H \cdot d_h$       |
+| $d_{\mathrm{ff}}$ | FFN 隐藏维度                        |
 
-**FLOPs 计数约定**：一次乘法 + 一次加法各算 1 次运算，因此 \(\underbrace{A}_{a\times b}\;\underbrace{B}_{b\times c}\) 约需 \(2abc\) 次浮点运算。
+**FLOPs 计数约定**：一次乘法 + 一次加法各算 1 次运算，因此 $\underbrace{A}_{a\times b}\;\underbrace{B}_{b\times c}$ 约需 $2abc$ 次浮点运算。
 
-##### 2. 总量关系：生成整个长度为 \(T\) 的序列的累计计算量
+##### 2. 总量关系：生成整个长度为 $T$ 的序列的累计计算量
 
 假设总共处理 $T$ 个目标位置。
 
@@ -1739,10 +1743,10 @@ $$
 
 |              | 无缓存                                    | 有缓存                                                   |
 | ------------ | ----------------------------------------- | -------------------------------------------------------- |
-| **输入**     | \(X\in\mathbb R^{n\times d}\)（整个前缀） | \(x_{\mathrm{new}}\in\mathbb R^{1\times d}\)（仅新位置） |
-| **三次投影** | \(C_{\mathrm{QKV,no}}(n)\approx 6nd^2\)   | \(C_{\mathrm{QKV,cache}}(n)\approx 6d^2\)                |
+| **输入**     | $X\in\mathbb R^{n\times d}$（整个前缀） | $x_{\mathrm{new}}\in\mathbb R^{1\times d}$（仅新位置） |
+| **三次投影** | $C_{\mathrm{QKV,no}}(n)\approx 6nd^2$   | $C_{\mathrm{QKV,cache}}(n)\approx 6d^2$                |
 
-累计到 \(T\) 步：
+累计到 $T$ 步：
 
 $$
 \begin{aligned}
@@ -1751,38 +1755,38 @@ C_{\mathrm{QKV,cache,total}} &\approx 6d^2 T \;\sim\; O(Td^2).
 \end{aligned}
 $$
 
-输出投影 \(W_O\in\mathbb R^{d\times d}\) 同理：每步从 \(2nd^2\) 降为 \(2d^2\)，阶数相同。
+输出投影 $W_O\in\mathbb R^{d\times d}$ 同理：每步从 $2nd^2$ 降为 $2d^2$，阶数相同。
 
-###### （2）注意力交互：\(QK^{\mathsf T}\) 与 \(AV\)
+###### （2）注意力交互：$QK^{\mathsf T}$ 与 $AV$
 
-**\(QK^{\mathsf T}\)（计算注意力分数）**：
+**$QK^{\mathsf T}$（计算注意力分数）**：
 
-- **无缓存**：\(Q,K\in\mathbb R^{n\times d_h}\)，所有头合计 \(2n^2d\) FLOPs。
-- **有缓存**：只算新位置 \(q_{\mathrm{new}}\in\mathbb R^{1\times d_h}\) 与缓存 \(K_{\mathrm{cache}}\in\mathbb R^{n\times d_h}\) 的内积，所有头合计 \(2nd\)。
+- **无缓存**：$Q,K\in\mathbb R^{n\times d_h}$，所有头合计 $2n^2d$ FLOPs。
+- **有缓存**：只算新位置 $q_{\mathrm{new}}\in\mathbb R^{1\times d_h}$ 与缓存 $K_{\mathrm{cache}}\in\mathbb R^{n\times d_h}$ 的内积，所有头合计 $2nd$。
 
-**\(AV\)（对 Value 加权）**：
+**$AV$（对 Value 加权）**：
 
-- **无缓存**：\(\underbrace{A}_{n\times n}\;\underbrace{V}_{n\times d_h}\)，所有头合计 \(2n^2d\)。
-- **有缓存**：\(\underbrace{a_{\mathrm{new}}}_{1\times n}\;\underbrace{V_{\mathrm{cache}}}_{n\times d_h}\)，所有头合计 \(2nd\)。
+- **无缓存**：$\underbrace{A}_{n\times n}\;\underbrace{V}_{n\times d_h}$，所有头合计 $2n^2d$。
+- **有缓存**：$\underbrace{a_{\mathrm{new}}}_{1\times n}\;\underbrace{V_{\mathrm{cache}}}_{n\times d_h}$，所有头合计 $2nd$。
 
 两项合并：
 
 |          | 无缓存                                                       | 有缓存                                         |
 | -------- | ------------------------------------------------------------ | ---------------------------------------------- |
-| **单步** | \(C_{\mathrm{attn,no}}(n)\approx 4n^2d\)                     | \(C_{\mathrm{attn,cache}}(n)\approx 4nd\)      |
-| **累计** | \(\displaystyle 4d\sum_{n=1}^{T}n^2 = \frac{2dT(T+1)(2T+1)}{3}\) | \(\displaystyle 4d\sum_{n=1}^{T}n = 2dT(T+1)\) |
+| **单步** | $C_{\mathrm{attn,no}}(n)\approx 4n^2d$                     | $C_{\mathrm{attn,cache}}(n)\approx 4nd$      |
+| **累计** | $\displaystyle 4d\sum_{n=1}^{T}n^2 = \frac{2dT(T+1)(2T+1)}{3}$ | $\displaystyle 4d\sum_{n=1}^{T}n = 2dT(T+1)$ |
 
 $$
 \boxed{O(T^3d)\longrightarrow O(T^2d)}
 $$
 
-> 注意其加速比约为 \(T/3\)（而非投影部分的 \((T+1)/2\)），因为注意力成本随前缀长度二次增长。
+> 注意其加速比约为 $T/3$（而非投影部分的 $(T+1)/2$），因为注意力成本随前缀长度二次增长。
 
 -------------------
 
 ##### 4. Cross-Attention
 
-Cross-Attention 与 Self-Attention 的注意力交互结构相同，区别在于：Key/Value 来自固定的 Encoder 输出 \(H^{\mathrm{enc}}\in\mathbb R^{S\times d}\)，目标位置只需注意 \(S\) 个源位置。
+Cross-Attention 与 Self-Attention 的注意力交互结构相同，区别在于：Key/Value 来自固定的 Encoder 输出 $H^{\mathrm{enc}}\in\mathbb R^{S\times d}$，目标位置只需注意 $S$ 个源位置。
 
 ###### （1）K、V 投影（可缓存为常量）
 
@@ -1790,7 +1794,7 @@ $$
 K_{\mathrm{cross}}=H^{\mathrm{enc}}W_K, \quad V_{\mathrm{cross}}=H^{\mathrm{enc}}W_V.
 $$
 
-由于 Encoder 输出在生成过程中不变，这两次投影只需计算**一次**（\(4Sd^2\) FLOPs），之后所有步直接复用：
+由于 Encoder 输出在生成过程中不变，这两次投影只需计算**一次**（$4Sd^2$ FLOPs），之后所有步直接复用：
 
 $$
 \boxed{4TSd^2\longrightarrow 4Sd^2}
@@ -1800,12 +1804,12 @@ $$
 
 ###### （2）注意力交互
 
-与 Self-Attention 推导完全同理，只需将前缀长度 \(n\) 替换为源句长度 \(S\)：
+与 Self-Attention 推导完全同理，只需将前缀长度 $n$ 替换为源句长度 $S$：
 
 |          | 无缓存                                           | 有缓存                                      |
 | -------- | ------------------------------------------------ | ------------------------------------------- |
-| **单步** | \(n\) 个 Query × \(S\) 个源位置：\(4nSd\)        | 1 个 Query × \(S\) 个源位置：\(4Sd\)        |
-| **累计** | \(\displaystyle 4Sd\sum_{n=1}^{T}n = 2SdT(T+1)\) | \(\displaystyle 4Sd\sum_{n=1}^{T}1 = 4SdT\) |
+| **单步** | $n$ 个 Query × $S$ 个源位置：$4nSd$        | 1 个 Query × $S$ 个源位置：$4Sd$        |
+| **累计** | $\displaystyle 4Sd\sum_{n=1}^{T}n = 2SdT(T+1)$ | $\displaystyle 4Sd\sum_{n=1}^{T}1 = 4SdT$ |
 
 $$
 \boxed{O(T^2Sd)\longrightarrow O(TSd)}
@@ -1876,7 +1880,7 @@ $$
 H=Z^{(L)}=\operatorname{Encoder}_\theta(\tilde x)\in\mathbb R^{N\times d}.
 $$
 
-对每个 $i\in\mathcal M$，把位置 \(i\) 的上下文表示 \(h_i\)，变成“该位置原词是什么”的**词表概率分布**：
+对每个 $i\in\mathcal M$，把位置 $i$ 的上下文表示 $h_i$，变成“该位置原词是什么”的**词表概率分布**：
 
 $$
 p_\theta(x_i=v\mid\tilde x)
@@ -1895,13 +1899,14 @@ $p_\theta(\cdot \mid\tilde x)$ 就是 MASK 掉的这个位置的条件概率分�
 若原始句子是“我喜欢机器学习”，目标就是希望模型得到 $p_\theta(x_i=\texttt{机器}\mid\tilde x)$ 尽可能大。
 
 **MLM 的训练损失**：
+
 $$
 \mathcal L_{\mathrm{MLM}}
 =-\mathbb E_{\mathcal M,\tilde x\mid x}
 \left[\sum_{i\in\mathcal M}\log p_\theta(x_i\mid\tilde x)\right].
 $$
 
-- $p_\theta (x_i | \tilde{x})$：对每个被选中的位置 \(i \in \mathcal{M} \)，损失取其真实 Token 的负对数概率
+- $p_\theta (x_i | \tilde{x})$：对每个被选中的位置 $i \in \mathcal{M}$，损失取其真实 Token 的负对数概率
 - 期望 $\mathbb{E}$：扰动 $\mathcal{M}$ 是随机的。理论上，我们希望模型在所有可能的遮盖方式下都表现好；实践中，每个 batch 随机采样一次遮盖方式，用样本平均近似该期望。
 
 在原始 BERT 中，大约 15% 的位置被选入 $\mathcal M$；其中大多数替换为 `[MASK]`，一部分替换为随机词，少量保持不变。这样模型不能只依赖 `[MASK]` 这个符号，而必须真正利用上下文。以
