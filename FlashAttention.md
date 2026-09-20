@@ -1,4 +1,4 @@
-#### 5.2.1 Flash Attention
+#### Flash Attention
 
 FlashAttention 是一种精确 Attention 算法，不是近似 Attention。
 它的目标不是改变 Transformer 的数学定义，而是改变 Attention 在 GPU 上的计算方式：

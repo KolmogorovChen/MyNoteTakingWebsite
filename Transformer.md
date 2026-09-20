@@ -1,4 +1,4 @@
-# Transformer 学习笔记
+# Transformer
 
 ## 一、问题与起源：Transformer 究竟学习什么
 
