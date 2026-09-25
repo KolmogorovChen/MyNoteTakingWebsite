@@ -1,17 +1,23 @@
 import { defineConfig } from 'vitepress';
 import fs from 'node:fs';
+import { groupTopics, topicItems } from './topics.mjs';
 const catalog = JSON.parse(fs.readFileSync(new URL('./catalog.json', import.meta.url), 'utf8'));
+const topics = groupTopics(catalog);
 const base = process.env.SITE_BASE || '/';
 export default defineConfig({
   base,
   lang: 'zh-CN',
   title: '我的笔记',
-  description: '个人大模型学习笔记',
+  description: '按主题整理的个人学习笔记',
   head: [['link', { rel: 'icon', href: `${base}favicon.svg` }]],
   lastUpdated: false,
   markdown: {
     math: true,
     config(md) {
+      const htmlInline = md.renderer.rules.html_inline;
+      md.renderer.rules.html_inline = (tokens, idx, options, env, self) => /^<\/?(?:EOS|END|BOS|PAD|UNK|MASK)>$/i.test(tokens[idx].content)
+        ? md.utils.escapeHtml(tokens[idx].content)
+        : htmlInline(tokens, idx, options, env, self);
       const fence = md.renderer.rules.fence;
       md.renderer.rules.fence = (tokens, idx, options, env, self) => tokens[idx].info.trim() === 'mermaid'
         ? `<MermaidDiagram source="${encodeURIComponent(tokens[idx].content)}" />`
@@ -20,11 +26,8 @@ export default defineConfig({
   },
   themeConfig: {
     logo: '/favicon.svg',
-    nav: [{ text: '全部笔记', link: '/' }],
-    sidebar: [
-      { text: '理论与学习路径', items: catalog.filter(e => !e.draft).map(({text,link}) => ({text,link})) },
-      { text: '草稿与补充', collapsed: true, items: catalog.filter(e => e.draft).map(({text,link}) => ({text,link})) }
-    ],
+    nav: [{ text: '全部主题', link: '/' }, ...(topics.length ? [{ text: '按主题浏览', items: topics.map(({text,link}) => ({text,link})) }] : [])],
+    sidebar: topics.map(topic => ({ text: topic.text, link: topic.link, collapsed: false, items: topicItems(topic) })),
     outline: { level: [2, 3], label: '本页目录' },
     docFooter: { prev: '上一篇', next: '下一篇' },
     sidebarMenuLabel: '笔记目录', returnToTopLabel: '返回顶部', darkModeSwitchLabel: '切换深色模式',

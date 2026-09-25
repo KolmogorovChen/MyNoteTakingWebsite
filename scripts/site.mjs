@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { groupTopics, topicItems } from '../site/.vitepress/topics.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const output = path.join(root, '.notes-site');
@@ -57,14 +58,28 @@ function generate() {
     const target = path.join(output, 'notes', rel);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, `---\ntitle: ${JSON.stringify(title)}\n---\n\n` + (/^#\s/m.test(content) ? '' : `# ${title}\n\n`) + content);
-    return { text: title, link: url, draft: rel.startsWith('demo/'), size: Math.round(Buffer.byteLength(raw) / 1024) };
+    return { text: title, link: url, relativePath: rel, size: Math.round(Buffer.byteLength(raw) / 1024) };
   });
   fs.cpSync(path.join(root, 'site', '.vitepress'), path.join(output, '.vitepress'), { recursive: true });
   fs.cpSync(path.join(root, 'site', 'public'), path.join(output, 'public'), { recursive: true });
   fs.writeFileSync(assetMapFile, JSON.stringify(assetMap, null, 2));
   fs.writeFileSync(path.join(output, '.vitepress', 'catalog.json'), JSON.stringify(entries, null, 2));
-  const list = draft => entries.filter(e => e.draft === draft).map(e => `- [${e.text}](${encodeURI(e.link)}) <span class="note-size">${e.size} KB</span>`).join('\n');
-  fs.writeFileSync(path.join(output, 'index.md'), `---\ntitle: 我的笔记\noutline: false\n---\n\n<div class="library-eyebrow">PERSONAL KNOWLEDGE LIBRARY</div>\n\n# 我的学习笔记\n\n<div class="library-intro">大模型理论与实践 · ${entries.length} 篇笔记</div>\n\n## 理论与学习路径\n\n${list(false)}\n\n## 草稿与补充\n\n${list(true)}\n`);
+  const topics = groupTopics(entries);
+  const topicDir = path.join(output, 'topics');
+  fs.mkdirSync(topicDir, { recursive: true });
+  const currentPages = new Set(topics.map(t => decodeURIComponent(t.link.split('/').pop()) + '.md'));
+  for (const name of fs.readdirSync(topicDir)) {
+    if (name.endsWith('.md') && !currentPages.has(name)) fs.unlinkSync(path.join(topicDir, name));
+  }
+  const label = text => text.replace(/[\\[\]<>]/g, c => ({'\\':'&#92;','[':'&#91;',']':'&#93;','<':'&lt;','>':'&gt;'}[c]));
+  for (const topic of topics) {
+    const list = topicItems(topic).map(item => item.items
+      ? `\n## ${label(item.text)}\n\n` + item.items.map(e => `- [${label(e.text)}](${encodeURI(e.link)})`).join('\n')
+      : `- [${label(item.text)}](${encodeURI(item.link)})`).join('\n');
+    fs.writeFileSync(path.join(topicDir, decodeURIComponent(topic.link.split('/').pop()) + '.md'), `---\ntitle: ${JSON.stringify(topic.text)}\n---\n\n# ${label(topic.text)}\n\n${topic.entries.length} 篇笔记 · [全部主题](/)\n\n${list}\n`);
+  }
+  const overview = topics.map(t => `## [${label(t.text)}](${t.link})\n\n${t.entries.length} 篇笔记\n\n` + t.entries.slice(0, 4).map(e => `- [${label(e.text)}](${encodeURI(e.link)})`).join('\n') + (t.entries.length > 4 ? `\n\n[查看全部笔记 →](${t.link})` : '')).join('\n\n');
+  fs.writeFileSync(path.join(output, 'index.md'), `---\ntitle: 我的笔记\noutline: false\n---\n\n<div class="library-eyebrow">PERSONAL KNOWLEDGE LIBRARY</div>\n\n# 我的学习笔记\n\n<div class="library-intro">${topics.length} 个主题 · ${entries.length} 篇笔记</div>\n\n${overview || '还没有笔记。在项目目录中创建主题文件夹，并放入 Markdown 文件即可。'}\n`);
   for (const warning of warnings) console.warn(warning);
   console.log(`已生成 ${entries.length} 篇笔记。`);
 }
@@ -78,7 +93,7 @@ if (mode === 'dev') {
   let timer;
   watcher = fs.watch(root, { recursive: true }, (_, filename) => {
     if (!filename || filename.split(/[\\/]/).some(p => skip.has(p) || p.startsWith('.'))) return;
-    if (!/\.(md|png|jpg|jpeg|svg|webp)$/i.test(filename)) return;
+    // Directory moves must refresh the catalog as well as individual file edits.
     clearTimeout(timer);
     timer = setTimeout(() => { try { generate(); } catch(e) { console.error(e); } }, 300);
   });
