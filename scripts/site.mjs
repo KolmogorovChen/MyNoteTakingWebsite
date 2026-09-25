@@ -65,6 +65,8 @@ function generate() {
   fs.writeFileSync(assetMapFile, JSON.stringify(assetMap, null, 2));
   fs.writeFileSync(path.join(output, '.vitepress', 'catalog.json'), JSON.stringify(entries, null, 2));
   const topics = groupTopics(entries);
+  const mainTopics = topics.filter(topic => topic.folder !== 'demo');
+  const drafts = topics.find(topic => topic.folder === 'demo');
   const topicDir = path.join(output, 'topics');
   fs.mkdirSync(topicDir, { recursive: true });
   const currentPages = new Set(topics.map(t => decodeURIComponent(t.link.split('/').pop()) + '.md'));
@@ -78,8 +80,10 @@ function generate() {
       : `- [${label(item.text)}](${encodeURI(item.link)})`).join('\n');
     fs.writeFileSync(path.join(topicDir, decodeURIComponent(topic.link.split('/').pop()) + '.md'), `---\ntitle: ${JSON.stringify(topic.text)}\n---\n\n# ${label(topic.text)}\n\n${topic.entries.length} 篇笔记 · [全部主题](/)\n\n${list}\n`);
   }
-  const overview = topics.map(t => `## [${label(t.text)}](${t.link})\n\n${t.entries.length} 篇笔记\n\n` + t.entries.slice(0, 4).map(e => `- [${label(e.text)}](${encodeURI(e.link)})`).join('\n') + (t.entries.length > 4 ? `\n\n[查看全部笔记 →](${t.link})` : '')).join('\n\n');
-  fs.writeFileSync(path.join(output, 'index.md'), `---\ntitle: 我的笔记\noutline: false\n---\n\n<div class="library-eyebrow">PERSONAL KNOWLEDGE LIBRARY</div>\n\n# 我的学习笔记\n\n<div class="library-intro">${topics.length} 个主题 · ${entries.length} 篇笔记</div>\n\n${overview || '还没有笔记。在项目目录中创建主题文件夹，并放入 Markdown 文件即可。'}\n`);
+  const overview = mainTopics.map(t => `## [${label(t.text)}](${t.link})\n\n${t.entries.length} 篇笔记\n\n` + t.entries.slice(0, 4).map(e => `- [${label(e.text)}](${encodeURI(e.link)})`).join('\n') + (t.entries.length > 4 ? `\n\n[查看全部笔记 →](${t.link})` : '')).join('\n\n');
+  const draftLink = drafts ? `\n\n<div class="library-secondary">\n\n[草稿与补充](${drafts.link}) · ${drafts.entries.length} 篇\n\n</div>\n` : '';
+  const mainCount = mainTopics.reduce((sum, topic) => sum + topic.entries.length, 0);
+  fs.writeFileSync(path.join(output, 'index.md'), `---\ntitle: 我的笔记\noutline: false\n---\n\n<div class="library-eyebrow">PERSONAL KNOWLEDGE LIBRARY</div>\n\n# 我的学习笔记\n\n<div class="library-intro">${mainTopics.length} 个主题 · ${mainCount} 篇笔记</div>\n\n${overview || '还没有主题笔记。在项目目录中创建主题文件夹，并放入 Markdown 文件即可。'}${draftLink}\n`);
   for (const warning of warnings) console.warn(warning);
   console.log(`已生成 ${entries.length} 篇笔记。`);
 }

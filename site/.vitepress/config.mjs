@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import { groupTopics, topicItems } from './topics.mjs';
 const catalog = JSON.parse(fs.readFileSync(new URL('./catalog.json', import.meta.url), 'utf8'));
 const topics = groupTopics(catalog);
+const mainTopics = topics.filter(topic => topic.folder !== 'demo');
+const drafts = topics.find(topic => topic.folder === 'demo');
 const base = process.env.SITE_BASE || '/';
 export default defineConfig({
   base,
@@ -26,8 +28,11 @@ export default defineConfig({
   },
   themeConfig: {
     logo: '/favicon.svg',
-    nav: [{ text: '全部主题', link: '/' }, ...(topics.length ? [{ text: '按主题浏览', items: topics.map(({text,link}) => ({text,link})) }] : [])],
-    sidebar: topics.map(topic => ({ text: topic.text, link: topic.link, collapsed: false, items: topicItems(topic) })),
+    nav: [{ text: '全部主题', link: '/' }, ...(mainTopics.length ? [{ text: '按主题浏览', items: mainTopics.map(({text,link}) => ({text,link})) }] : [])],
+    sidebar: [
+      ...mainTopics.map(topic => ({ text: topic.text, link: topic.link, collapsed: false, items: topicItems(topic) })),
+      ...(drafts ? [{ items: [{ text: drafts.text, link: drafts.link }] }] : [])
+    ],
     outline: { level: [2, 3], label: '本页目录' },
     docFooter: { prev: '上一篇', next: '下一篇' },
     sidebarMenuLabel: '笔记目录', returnToTopLabel: '返回顶部', darkModeSwitchLabel: '切换深色模式',

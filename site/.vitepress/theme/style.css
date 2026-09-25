@@ -6,6 +6,10 @@
 .vp-doc h2 { line-height: 1.5; }
 .library-eyebrow { color: var(--vp-c-brand-1); font-size: 12px; font-weight: 700; letter-spacing: .12em; margin-bottom: 12px; }
 .library-intro { color: var(--vp-c-text-2); margin: 12px 0 32px; }
+.library-secondary { margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--vp-c-divider); color: var(--vp-c-text-2); font-size: 14px; }
+.library-secondary p { margin: 0; }
+.library-secondary a { color: var(--vp-c-text-2); font-weight: 400; text-decoration: none; }
+.library-secondary a:hover { color: var(--vp-c-brand-1); text-decoration: underline; }
 .note-size { font-size: 13px; color: var(--vp-c-text-3); padding-left: 10px; white-space: nowrap; }
 .vp-doc img { border-radius: 8px; max-width: 100%; height: auto; margin: 24px auto; }
 mjx-container[display='true'] { overflow-x: auto; overflow-y: hidden; padding: 8px 0; max-width: 100%; }
