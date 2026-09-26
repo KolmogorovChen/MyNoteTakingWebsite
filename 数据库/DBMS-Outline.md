@@ -66,7 +66,7 @@ WHERE s.major = 'Statistics'
   AND e.grade > 85
 ```
 
-<img src="E:\AI_Learning\大模型理论学习\数据库\figures\Entity.png" alt="Entity" style="zoom:66%;" />
+<img src="figures\Entity.png" alt="Entity" style="zoom:66%;" />
 
 #### （2）提高大规模数据访问效率
 
@@ -153,7 +153,7 @@ DBMS 可以将这些操作组织成一个事务，使其具有“全部完成或
 | 逻辑层         | 数据有哪些结构和关系？     | 学生表、课程表、选课表及其约束 |
 | 物理层         | 数据实际怎样存储和访问？   | 文件、数据页、记录、索引       |
 
-<img src="E:\AI_Learning\大模型理论学习\数据库\figures\Levels of Abstractions.png" alt="Levels of Abstractions" style="zoom:50%;" />
+<img src="figures\Levels of Abstractions.png" alt="Levels of Abstractions" style="zoom:50%;" />
 
 例如，从逻辑层看，`Student` 是一张表；从物理层看，它的数据可能分布在许多文件页中。
 
@@ -224,7 +224,7 @@ $$
 
 ### 4. What are the major components of a DBMS
 
-<img src="E:\AI_Learning\大模型理论学习\数据库\figures\DBMS Architecture.png" alt="DBMS Architecture" style="zoom:67%;" />
+<img src="figures\DBMS Architecture.png" alt="DBMS Architecture" style="zoom:67%;" />
 
 不同教材会使用不同的模块划分，但主要职责通常包括下面这些。
 
@@ -246,11 +246,11 @@ $$
 | 查询优化器（Optimizer）                     | 比较候选方案，选择执行计划             |
 | 查询执行器（Execution）                     | 执行扫描、筛选、连接、排序、聚合等操作 |
 
-<img src="E:\AI_Learning\大模型理论学习\数据库\figures\QueryProcessor.png" alt="QueryProcessor" style="zoom:60%;" />
+<img src="figures\QueryProcessor.png" alt="QueryProcessor" style="zoom:60%;" />
 
 **系统目录**尤其容易被忽略。它保存的是“描述数据的数据”，也就是**元数据（Metadata）**：
 
-<img src="E:\AI_Learning\大模型理论学习\数据库\figures\MetaData.png" alt="MetaData" style="zoom:60%;" />
+<img src="figures\MetaData.png" alt="MetaData" style="zoom:60%;" />
 
 例如：
 
