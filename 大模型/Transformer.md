@@ -681,7 +681,7 @@ $$
 
 ### 3. Decoder
 
-<img src="E:\AI_Learning\大模型理论学习\大模型\figures\OutputEmbedding.png" alt="OutputEmbedding" style="zoom:50%;" />
+<img src="figures/OutputEmbedding.png" alt="OutputEmbedding" style="zoom:50%;" />
 
 训练时输入的是**右移后的真实目标序列**；推理时输入的是起始符和**已经生成的目标前缀**。推理时并没有完整译文可作为输入。
 
@@ -701,7 +701,7 @@ $$
 
 ------------------
 
-<img src="E:\AI_Learning\大模型理论学习\大模型\figures\Decoder.png" alt="Decoder" style="zoom:50%;" />
+<img src="figures/Decoder.png" alt="Decoder" style="zoom:50%;" />
 
 Decoder 的任务是根据 Encoder 的输出和已经生成的单词，预测下一个单词。
 
@@ -834,7 +834,7 @@ $$
 
 #### 3.3 Linear + Softmax
 
-<img src="E:\AI_Learning\大模型理论学习\大模型\figures\Output.png" alt="Output" style="zoom:50%;" />
+<img src="figures/Output.png" alt="Output" style="zoom:50%;" />
 
 经过 Feed-Forward 网络后，Decoder 每一层会输出一个特征向量。我们要把它变回人类能读懂的单词。
 
