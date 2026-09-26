@@ -50,7 +50,7 @@ RNN 的问题在于：
 
 LSTM（1997）通过引入**门控机制**（遗忘门、输入门、输出门）和**细胞状态（Cell State）**，缓解了长距离依赖问题：
 
-<img src="E:\AI_Learning\大模型理论学习\figures\LSTM_framework.png" style="zoom:40%;" />
+<img src="figures/LSTM_framework.png" style="zoom:30%;" />
 
 
 
@@ -132,7 +132,7 @@ Transformer 的核心突破可以用一句话概括：**完全抛弃循环结构
 
 ### 1. 输入表示：Tokenizer、Embedding、位置编码
 
-<img src="C:\Users\年年chen\AppData\Roaming\Typora\typora-user-images\image-20260323142917478.png" alt="image-20260323142917478" style="zoom: 67%;" />
+<img src="figures/Embedding.png" alt="image-20260323142917478" style="zoom: 50%;" />
 
 首先，需要将离散文本转换为连续向量表示，使神经网络能够处理文本信息 
 
@@ -483,7 +483,7 @@ RoPE 有两种常见的**添加方式**：
 
 ### 2. Encoder
 
-<img src="C:\Users\年年chen\AppData\Roaming\Typora\typora-user-images\image-20260323143006621.png" alt="image-20260323143006621" style="zoom:67%;" />
+<img src="figures/Encoder.png" alt="image-20260323143006621" style="zoom:50%;" />
 
 #### 2.1 Multi-Head Attention + Add&Norm
 
@@ -651,7 +651,7 @@ Attention 负责跨位置汇总，FFN 负责逐位置变换。若去掉非线性
 
 ##### 2.1.4 Encoder：生成上下文表示
 
-<img src="C:\Users\年年chen\AppData\Roaming\Typora\typora-user-images\image-20260323143006621.png" alt="image-20260323143006621" style="zoom:67%;" />
+<img src="figures/Encoder.png" alt="Encoder" style="zoom:50%;" />
 
 第 $\ell$ 层以 $H^{(\ell-1)}\in\mathbb R^{S\times d}$ 为输入：
 
@@ -681,7 +681,7 @@ $$
 
 ### 3. Decoder
 
-<img src="C:\Users\年年chen\AppData\Roaming\Typora\typora-user-images\image-20260323143036010.png" alt="image-20260323143036010" style="zoom:67%;" />
+<img src="E:\AI_Learning\大模型理论学习\大模型\figures\OutputEmbedding.png" alt="OutputEmbedding" style="zoom:50%;" />
 
 训练时输入的是**右移后的真实目标序列**；推理时输入的是起始符和**已经生成的目标前缀**。推理时并没有完整译文可作为输入。
 
@@ -701,7 +701,7 @@ $$
 
 ------------------
 
-<img src="C:\Users\年年chen\AppData\Roaming\Typora\typora-user-images\image-20260323143118360.png" alt="image-20260323143118360" style="zoom:67%;" />
+<img src="E:\AI_Learning\大模型理论学习\大模型\figures\Decoder.png" alt="Decoder" style="zoom:50%;" />
 
 Decoder 的任务是根据 Encoder 的输出和已经生成的单词，预测下一个单词。
 
@@ -834,7 +834,7 @@ $$
 
 #### 3.3 Linear + Softmax
 
-<img src="C:\Users\年年chen\AppData\Roaming\Typora\typora-user-images\image-20260323150252242.png" alt="image-20260323150252242" style="zoom:67%;" />
+<img src="E:\AI_Learning\大模型理论学习\大模型\figures\Output.png" alt="Output" style="zoom:50%;" />
 
 经过 Feed-Forward 网络后，Decoder 每一层会输出一个特征向量。我们要把它变回人类能读懂的单词。
 
