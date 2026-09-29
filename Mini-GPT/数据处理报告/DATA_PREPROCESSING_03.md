@@ -1,10 +1,10 @@
-# 数据预处理报告（三）
+# 数据预处理笔记（三）
 
 D7 切分冻结、D8 训练 BPE、D9 编码与 packing、D10 数据发布验收
 
 ## 状态与边界
 
-本篇接续 [DATA_PREPROCESSING_02.md](DATA_PREPROCESSING_02.md)。根据本轮提供的信息，D1–D6 已在服务器完成并有实验记录；本轮工作是在本地补齐 D7–D10 的实现、配置、测试和操作笔记。**本篇中的服务器命令尚未由本次编辑执行，真实切分数量、token 数、耗时和双卡吞吐均待实测。** 第 10 节单独记录已经完成的本地合成数据测试，不能用其数字代替 FineWeb-Edu 的结果。
+本篇接续 [DATA_PREPROCESSING_02.md](DATA_PREPROCESSING_02.md)。D1–D6 已在服务器完成并有实验记录；用户随后完成了 D7，下面保留其提供的 D7 实际数量。D8/D9 因处理较慢，在本地修改为来源并行和有界批处理；**本次编辑没有在服务器运行 D8/D9，token 数、耗时、加速倍数和双卡吞吐仍待实测。** 第 10 节的本地合成数据结果不能代替 FineWeb-Edu 的结果。
 
 服务器目录沿用前两篇：
 
@@ -27,13 +27,13 @@ D7 切分冻结、D8 训练 BPE、D9 编码与 packing、D10 数据发布验收
 
 > D7 决定“谁属于哪个集合”；D8 决定“文字怎样变成 token”；D9 决定“token 怎样组成训练窗口”；D10 检查这些约定是否真的成立。
 
-本版沿用 [01_DATA_ENGINEERING.md](../01_DATA_ENGINEERING.md) 的方案：train/validation/test 期望比例 99.8%/0.1%/0.1%，总词表 32768，训练窗口 2048，文档后加 EOS，允许连续 packing 中的跨文档注意。
+本版沿用 [01_DATA_ENGINEERING.md](../01_DATA_ENGINEERING.md) 的切分和连续流约定：train/validation/test 期望比例 99.8%/0.1%/0.1%，训练窗口 2048，文档后加 EOS，允许连续 packing 中的跨文档注意。本次实际 `configs/tokenizer_bpe_v1.json` 已设为 **65536 总词表、5 GiB 抽样目标**，以当前配置文件及其哈希为准。
 
 ### 1.1 为什么增加 release，而不改已有 data_version
 
 `data_version` 标识已固定的数据来源；本次用 `--release v1` 标识其 D7–D10 下游处理方案。新阶段的清单放进 `data/manifests/V/v1/`，不会覆盖已有 `data/manifests/V/{source,quality,exact,near,contamination}.json`。
 
-同一个 release 首次启动就写 `identity.json`，记录输入清单哈希、配置内容与哈希、阶段代码指纹和库版本。成功产物重跑时先校验再复用；变更 seed、比例、词表、packing 参数或阶段实现，需要新 release，不能把新结果写进已冻结的目录。一个 release 同时只运行一个写入任务。
+同一个 release 首次启动就写 `identity.json`，记录输入清单哈希、配置内容与哈希、阶段代码指纹和库版本。成功产物重跑时先校验再复用；变更 seed、比例、词表或 packing 参数需要新 release。此次 D8/D9 代码加速只改变实现，旧版未完成任务在严格核对输入和已有完整产物后可用 `--resume-incomplete` 迁移，规则见第 8 节。一个 release 同时只运行一个写入任务，迁移前须确认旧进程已退出。
 
 ### 1.2 文件位置
 
@@ -45,6 +45,7 @@ D7 切分冻结、D8 训练 BPE、D9 编码与 packing、D10 数据发布验收
 | `data/processed/V/R/audit.sqlite` | D7 全局唯一性检查工作索引 |
 | `tokenizer/V/R/sample.parquet` | D8 抽中文档的 ID、来源行、正文哈希、字节数和分层信息 |
 | `tokenizer/V/R/sample.jsonl` | D8 实际训练文本，包含受控语料，只放数据盘 |
+| `tokenizer/V/R/_sample_parts/<编号>/` | D8 各来源已完成的并行抽样中间件；只有带有效 manifest 的部分可复用 |
 | `tokenizer/V/R/tokenizer.json` | BPE 词表、merges、预切分与解码配置 |
 | `data/tokenized/V/R/_encoded/00000/` | D9 按来源分片编码的中间 token 和文档索引，支持复用 |
 | `data/tokenized/V/R/shuffle.sqlite` | D9 只存文档位置与排序键的磁盘索引 |
@@ -57,7 +58,7 @@ D7 切分冻结、D8 训练 BPE、D9 编码与 packing、D10 数据发布验收
 | `reports/data/V/R/review_{documents,windows}.jsonl` | 人工抽查入口，可能含正文片段，禁止提交到 Git |
 | `data/manifests/V/R/release.json` | 自动检查及人工/真实训练读取门槛全部通过后的发布凭据 |
 
-`sampling.sqlite`、`audit.sqlite`、`shuffle.sqlite`、`validation.sqlite` 都是可重建的工作索引，不是训练入口。D9 的 `_encoded` 当前属于复用及 D10 校验依赖，不能在验收前随意清理。
+`audit.sqlite`、`shuffle.sqlite`、`validation.sqlite` 都是可重建的工作索引，不是训练入口。新版 D8 不再创建 `sampling.sqlite`；旧版留下的文件也不参与新版抽样。D9 的 `_encoded` 当前属于复用及 D10 校验依赖，不能在验收前随意清理。
 
 ## 2. 运行前准备
 
@@ -69,12 +70,19 @@ D7 切分冻结、D8 训练 BPE、D9 编码与 packing、D10 数据发布验收
 cd /home/zjinzcc2025/2026/Decoder_Only
 python -m pip install -e '.[data]'
 python -m unittest discover -s tests -v
+
+# 日志记录
+mkdir -p /data0/zcc/logs
+python -m unittest discover -s tests -v 2>&1 \
+| grep -v 'huggingface/tokenizers: The current process just got forked' \
+| tee /data0/zcc/logs/unittest_$(date +%Y%m%d_%H%M%S).log
 ```
 
 新依赖是 `tokenizers>=0.20,<0.24`。本地验证使用 Python 3.10.4、PyArrow 23.0.1、NumPy 2.1.2、Tokenizers 0.20.1；这不是服务器环境实测。**首次服务器运行后保留实际 `pip freeze`，同一 release 不要中途升级依赖。** D0–D6 的阶段模块、`common.py` 和 `stage_io.py` 未修改，避免新功能改变旧阶段的代码指纹。
 
 ```bash
-set -euo pipefail
+cd /home/zjinzcc2025/2026/Decoder_Only
+# set -euo pipefail  只适合写在自动化 bash 脚本文件里
 export DATA_ROOT=/data0/zcc/datasets/decoder-only
 export DATA_VERSION=fineweb-edu-sample-10BT-e8ca86a612ab
 export SOURCE="$DATA_ROOT/data/manifests/$DATA_VERSION/source.json"
@@ -86,6 +94,13 @@ mkdir -p "$RELEASE_REPORTS"
 python -m pip freeze > "$RELEASE_REPORTS/environment.txt"
 df -h "$DATA_ROOT"
 free -h
+
+# 输出
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1    7.0T  4.8T  1.8T  73% /data0
+               total        used        free      shared  buff/cache   available
+Mem:           1.0Ti        24Gi        27Gi        36Mi       955Gi       977Gi
+Swap:          1.0Gi       178Mi       845Mi
 ```
 
 这里的 `set -o pipefail` 使后续 `python ... | tee ...` 在 Python 失败时仍返回失败，避免只看到日志文件就误判阶段成功。所有命令从代码目录运行，`--root` 指数据盘，不需要软链接。
@@ -116,15 +131,22 @@ for name in ('quality', 'exact', 'near', 'contamination'):
     assert [f['source_file'] for f in m['files']] == [f['path'] for f in source['files']]
     print(name, {k: v for k, v in r.items() if type(v) is int})
 PY
+
+# 输出
+version: fineweb-edu-sample-10BT-e8ca86a612ab source shards: 14
+quality {'email_replacements': 277507, 'kept': 9672101, 'phone_replacements': 466346, 'removed': 0, 'rows': 9672101}
+exact {'exact_duplicate': 408301, 'kept': 9263800, 'quality_removed': 0, 'rows': 9672101}
+near {'candidate_pairs_checked': 2668063, 'kept': 9088083, 'near_duplicate': 175717, 'rows': 9672101, 'too_short_for_shingles': 2, 'upstream_removed': 408301, 'verified_similar_pairs': 181130}
+contamination {'benchmark_contamination': 3508, 'contaminated_cluster_members': 3593, 'kept': 9084575, 'matched_cluster_example_pairs': 3588, 'matched_clusters': 3508, 'rows': 9672101, 'upstream_removed': 584018}
 ```
 
-D7 还会对 D3/D5/D6 的 Parquet 做完整 SHA256 与行数检查，逐行对齐 `doc_id`；不打开 D5 的大型 SQLite 索引。D10 再对 D3–D6 报告与清单计数以及逐阶段保留/排除关系对账。不要为了绕过失败改报告数字；应回到对应原始产物定位问题。
-
-本轮需继续携带的已知限制：D5 两篇超长文档获准保留但未做近似去重；D6 有 35 道天然短题无法构造当前规则的匹配片段；OBQA/WinoGrande/MMLU 未纳入该轮 D6。D7–D10 不会补做这些筛查，也不会把这些限制变成“已检查且无污染”。
+**已经完成**对 D3/D5/D6 的 Parquet 做完整 SHA256 与行数检查，逐行对齐 `doc_id`，对 D3–D6 报告与清单计数以及逐阶段保留/排除关系对账。
 
 ### 2.3 空间预算
 
-令 D9 实际输出的含 EOS token 数为 `T`：最终二进制约 `2T` 字节，按来源保存的 `_encoded` 再占约 `2T` 字节，因此本实现的 token 数据峰值基线约 **`4T` 字节**，另加文档索引、SQLite 临时排序、D8 约 1GiB 文本、报告和运行余量。若实际约 10B token，仅两份 token 数据约 40GB（十进制）；不是在已有 140G 上只追加 20GB。
+令 D9 实际输出的含 EOS token 数为 `T`：
+
+最终二进制约 `2T` 字节，按来源保存的 `_encoded` 再占约 `2T` 字节，因此本实现的 token 数据峰值基线约 **`4T` 字节**，另加文档索引、SQLite 临时排序、报告和运行余量。若实际约 10B token，仅两份 token 数据约 40GB（十进制）；不是在已有 140G 上只追加 20GB。D8 的 5 GiB 样本会同时保留各来源部分和合并文件，文本盘占用约为实际样本的两倍，另计 Parquet 清单。D9 并行 train 打包将临时 token 文件直接移入最终目录，不额外复制一整份 token 流；合并文档索引期间短时保留分区索引与最终索引。
 
 D7 不再复制约 20G 的 D3 正文，但必须保留原 D3 文件。不要直接用 `sample-10BT` 名称或 `du` 体积推算本项目 token 数。大规模耗时、RAM 和磁盘峰值需要服务器实测；Python 流式读写不代表 Rust BPE 训练器和单篇超长文本只占固定小内存。
 
@@ -137,6 +159,16 @@ python scripts/prepare_data.py --root "$DATA_ROOT" split \
   --source "$SOURCE" --release "$RELEASE" \
   --config configs/data_split_v1.json \
   2>&1 | tee "$RELEASE_REPORTS/d7.log"
+  
+# 输出
+/data0/zcc/datasets/decoder-only/data/manifests/fineweb-edu-sample-10BT-e8ca86a612ab/v1/split.json
+"counts": {
+    "rows": 9084575,
+    "test": 9083,
+    "train": 9066352,
+    "utf8_bytes": 42959983960,
+    "validation": 9140
+  }
 ```
 
 **（1）D6 `status=kept` 才能进入切分。** 对这些行同时检查：D3 正文非空且无删除原因；D5 状态为 kept；D5/D6 的 `cluster_id`、`keeper_doc_id` 一致且 keeper 是本行；D6 没有簇污染和命中计数；`source_file + source_row` 能重算出原 `doc_id`；D3 正文的 SHA256 与 `quality_text_sha256` 一致。
@@ -147,7 +179,9 @@ python scripts/prepare_data.py --root "$DATA_ROOT" split \
 
 ### 3.2 稀疏索引是什么
 
-旧 D3–D6 每个文件都保留全部来源行；**D7 只为最终保留文档写行**。因此 D7 Parquet 的物理行号不再等于原始行号，要用其中的 `source_row` 回到 D3。索引包含：
+旧 D3–D6 每个文件都保留全部来源行；**D7 只为最终保留文档写行**（只保留 **D6 判定为 `status=kept`**的文档，`D7.rows = train+validation+test = D6.kept`））。
+
+因此 D7 Parquet 的物理行号不再等于原始行号，要用其中的 `source_row` 回到 D3。索引包含：
 
 - `doc_id`、`source_row`、`cluster_id`、`split`；来源文件键保存在每片侧车和集中清单中。
 - `quality_text_sha256`、`normalized_text_sha256`、实际正文 UTF-8 字节数和字符数。
@@ -167,29 +201,60 @@ D7.rows = train + validation + test = D6.kept
 
 D10 默认要求 validation/test 各至少 **5,000,000 个正文 token（不含 EOS）**。若编码后不足，应保留 v1、选定新比例并改用 `--release v2`，重新执行 D7–D9；相应 tokenizer 也必须只用新 train 训练。调整应在正式训练和查看 test 指标之前完成。不能在模型已经见过相关文档后，将其挪到新 test 并继续声称无泄漏；也不能按 test 成绩挑 seed。
 
+------------
+
 ## 4. D8：训练本项目 BPE
 
-```bash
-python scripts/prepare_data.py --root "$DATA_ROOT" train-tokenizer \
-  --source "$SOURCE" --release "$RELEASE" \
-  --config configs/tokenizer_bpe_v1.json \
-  2>&1 | tee "$RELEASE_REPORTS/d8.log"
-```
+D8 （D7 切分冻结 → **D8 训练 BPE** → D9 编码 packing → D10 发布验收）解决的核心问题是"**文字怎样变成 token**"。D8 就是从 D7 输出的数据中抽样一部分数据来训练一份专属的 BPE 词表 
 
-### 4.1 抽样范围与可复现性
+> （对于 BPE 的介绍见 [BPE.md](BPE.md)）。
 
-只遍历 D7 `split=train` 的索引，以“来源分片 × 长度桶”分层。短/中/长按字符数 `<1000`、`1000–9999`、`>=10000` 划分；各层按 train 正文字节占比分配预算，层内按固定 seed 的文档哈希顺序选取整篇文档。
+在为 FineWeb-Edu 语料训练 Decoder-Only 模型之前，必须先确定一套固定的 byte-level BPE 词表，后续 D9 的编码、D10 的验收、乃至训练与推理都要共用同一份词表文件。
 
-默认目标为 1,073,741,824 UTF-8 字节（1GiB）。若 train 更小则用实际可用量；每层选到达到预算为止，所以会有整篇文档造成的超额，实际字节数写入 sample manifest。该抽样不保证罕见 crawl 完全均衡，也不等同于每层等量抽样。
+#### 4.1 定位与入口
 
-`sample.parquet` 记录所有被选中的文档及正文哈希，`sample.jsonl` 保存实际文本。D10 会逐条检查两者对应关系及 train 归属。抽样数据库只保存元数据，正文通过 D3 顺序读取落盘，不一次装入 1GiB Python 字符串列表。
+- **输入**：只读取 D7 `split=train` 的稀疏索引（即 D6 判定 `status=kept` 且被分入训练集的那些文档），validation/test 绝不参与训练词表，避免用评测数据"泄题"。
 
-### 4.2 BPE 与特殊 token 约定
+- **主入口命令**：
+
+  ```bash
+  python scripts/prepare_data.py --root "$DATA_ROOT" train-tokenizer \
+    --source "$SOURCE" --release "$RELEASE" \
+    --config configs/tokenizer_bpe_v1.json --workers 8 \
+    2>&1 | tee "$RELEASE_REPORTS/d8.log"
+    
+  # 整个过程记录在 d8.log 中
+  # /data0/zcc/datasets/decoder-only/data/manifests/fineweb-edu-sample-10BT-e8ca86a612ab/v1/tokenizer.json
+  ```
+
+- **产物**：`tokenizer.json`（BPE 词表、merges、预切分与解码配置）、抽样清单 `sample.parquet` / `sample.jsonl`、以及 tokenizer manifest（完成清单，注意它在 `manifests` 目录，与词表文件同名但不是同一个东西）。整个训练过程记录在 `d8.log`。
+
+--------------
+
+### 4.2 抽样范围与可复现性
+
+- **分层维度 = 来源分片 × 长度桶**。短/中/长按字符数 `<1000`、`1000–9999`、`>=10000` 三档划分。
+- **预算按字节占比分配**：各层按 train 正文字节占比分配抽样预算，层内按固定 seed 的文档哈希顺序选"整篇文档"。
+  - 当前配置目标为 **5,368,709,120 UTF-8 字节（5 GiB）**
+  - train 被切成很多**分层**（来源分片 × 长度桶，短/中/长三档）；
+  - 每一层分到的额度 = 总预算 ×（该层 train 正文字节占 train 总字节的比例）。
+    - 例：某"来源×长度桶"层占 train 全部字节的 10%，那它就分到 5 GiB × 10% = 0.5 GiB 的额度；
+  - 层内再按固定 seed 的文档哈希顺序，一篇一篇地"整篇"选取，选到凑够这一层的额度为止。
+
+- **会有超额是正常现象**：因为只能整篇选取、"每层选到达到预算为止"，所以整篇文档会造成超出 5 GiB 的实际字节，真实值写入 sample manifest
+
+- **两份清单互相印证**：`sample.parquet` 记录所有被选中文档的 ID、来源行、正文哈希、字节数与分层信息；`sample.jsonl` 保存实际文本。D10 会逐条核对二者对应关系及是否真的属于 train。
+
+--------------
+
+### 4.3 BPE 与特殊 token 约定
+
+本次正式配置 `configs/tokenizer_bpe_v1.json` 已固定为 **65536 总词表、5 GiB 抽样目标**，以配置文件及其哈希为准。关键约定：
 
 | 配置 | 本版值/行为 |
 |---|---|
 | 算法 | byte-level BPE，使用全部 256 个 byte-level 初始字母 |
-| 总词表 | 32768，包含三个保留 token |
+| 总词表 | 65536，包含三个保留 token；D9 使用 `<u2` 存储 ID |
 | PAD / BOS / EOS | ID 分别为 0 / 1 / 2 |
 | UNK | 不设 UNK；编码后检查 ID 范围和保留 ID |
 | 规范化 | 对外接口沿用 `nfc-lines-v1`，不额外 lowercase 或 NFKC |
@@ -199,41 +264,226 @@ python scripts/prepare_data.py --root "$DATA_ROOT" train-tokenizer \
 
 三个保留 token 的字面形式分别为 `<|pad|>`、`<|bos|>`、`<|eos|>`。
 
-训练通过 `train_from_iterator` 喂给 Tokenizers 的 BPE trainer。D8 每篇训练文本按 16384 个字符分段送入 trainer，以限制单次输入长度；所有片段都会使用，但段边界会影响可学习的合并。这是 tokenizer 拟合时的分段，**D9 仍对完整文档编码，不按这个长度截断或丢弃长文**。相关 API 见 [BpeTrainer 官方文档](https://huggingface.co/docs/tokenizers/main/en/api/trainers) 和 [官方迭代器训练说明](https://www.huggingface.co/docs/tokenizers/python/latest/tutorials/python/training_from_memory.html)；项目语料选择、规范化和特殊 token 策略以本实现为准。
+**训练机制细节**：
 
-如果 trainer 没达到配置的词表总数，程序会停止，不会默默用较小词表替代 32768。应检查样本规模与最小词频，并在新 release 中调整。抽样与输入次序固定、环境版本归档，成功的 tokenizer 文件及其哈希才是训练和推理共享的最终依据；不承诺跨 Tokenizers 版本重新训练后仍逐字节相同。
+- 通过 `train_from_iterator` 喂给 Tokenizers 的 BPE trainer。D8 把每篇训练文本按 **16384 字符分段**，再以 **128 段为一批**送入 trainer；所有片段都会被使用，但**段边界会影响可学习的合并**。
+- Rust 侧 Rayon 线程数由 `--workers` 决定；日志报告已送入的 UTF-8 字节数。trainer 内部 BPE 合并没有精确百分比进度接口，输入读完后每 30 秒报告一次仍在运行的时长。
+- **重要区分**：这里的分段只是 tokenizer 拟合时的分段，**D9 仍对完整文档编码，不按这个长度截断或丢弃长文**。
+- **保底规则**：如果 trainer 没达到配置的词表总数，程序会停止，**不会默默用较小词表替代 65536**。此时应检查样本规模与最小词频，并在新 release 中调整。
 
-### 4.3 为什么必须使用 ProjectTokenizer
+可复现性的诚实边界：抽样与输入次序固定、环境版本归档后，成功的 tokenizer 文件及其哈希才是训练与推理共享的最终依据；**但不承诺跨 Tokenizers 版本重新训练后仍逐字节相同。**
 
-单独设置 `add_special_tokens=False` 不能保证正文中的特殊 token 字面串不被识别成控制 token。统一接口会设置 `encode_special_tokens=True`，并检查普通正文编码中不存在 0/1/2。网页里出现字符串 `<|eos|>` 时应得到普通字节 token，而不是插入文档边界。
+-----------------
 
-```python
+### 4.4 为什么必须使用 ProjectTokenizer
+
+这是一个容易被忽略但极关键的安全点：
+
+> **`add_special_tokens=False` 不能保证正文中出现的特殊 token 字面串不被识别成控制 token。（如<|eos|> 这类字符）**
+
+统一接口 `ProjectTokenizer` 会设置 `encode_special_tokens=True`，并检查普通正文编码中不存在 ID 0/1/2。也就是说，当网页正文里恰好出现字符串 `<|eos|>` 时，它应被编码成普通字节 token，而**不是**被插入成文档边界。
+
+**自检例子：**`'A literal <|eos|> string.'` 
+
+防止模型认为文档在`'<|eos|>'`这里就结束了 ；编码后 `2 not in ids` 且解码严格往返一致。
+
+```bash
+python - <<'PY'
 from pathlib import Path
 from decoder_only.data.tokenizer import ProjectTokenizer
 
 tokenizer = ProjectTokenizer(Path('/data0/zcc/datasets/decoder-only/tokenizer/'
                                   'fineweb-edu-sample-10BT-e8ca86a612ab/v1/tokenizer.json'))
 ids = tokenizer.encode('A literal <|eos|> string.')
+print("ids:", ids)
+print("decoded:", repr(tokenizer.decode(ids)))
 assert 2 not in ids
 assert tokenizer.decode(ids) == 'A literal <|eos|> string.'
+PY
+
+# 输出
+ids: [35, 18310, 5518, 94, 71, 401, 94, 32, 6884, 16]
+decoded: 'A literal <|eos|> string.'
 ```
 
-训练、推理、评估都使用该接口；不要绕过它直接加载后端并按默认参数 encode。普通文本应在规定的规范化范围内往返一致。D8 自动检查空文本、英文、数字、公式、组合 Unicode、多行、长文本和保留串，并逐篇检查实际训练样本往返一致性，报告正文 `bytes/token`。D2 的 `upstream_token_count` 不作为本项目 token 数。
+约束：
+
+- 训练、推理、评估**都使用该接口**，不要绕过它直接加载后端、按默认参数 encode；普通文本应在规定的规范化范围内往返一致。
+- D8 会自动检查空文本、英文、数字、公式、组合 Unicode、多行、长文本和保留串，并逐篇检查实际训练样本的往返一致性，报告正文 `bytes/token`。
+
+--------------
 
 ## 5. D9：编码、打乱和连续 packing
+
+D9：**把 D7 的 train 文档用 D8 训练好的 tokenizer 转成 token 流，打乱顺序，再按固定序列长度拼成连续 packed 序列。** 它的核心目标是把“长度不一的文档”变成“训练友好的固定长度 token 序列”，同时避免跨文档污染。
+
+下面按“输入输出 → 编码 → 打乱 → packing → 掩码与标签 → 工程要点”展开。
 
 ```bash
 python scripts/prepare_data.py --root "$DATA_ROOT" pack \
   --source "$SOURCE" --release "$RELEASE" \
-  --config configs/data_packing_v1.json \
+  --config configs/data_packing_v1.json --workers 8 \
   2>&1 | tee "$RELEASE_REPORTS/d9.log"
 ```
 
+-----------
+
+### 5.1 输入和输出
+
+**输入**
+
+- D7 的 `split=train` 文档；
+- D8 产出的 `tokenizer.json`；
+- D8 的 sample manifest，用于确认编码对象确实来自训练集；
+- 本项目 `ProjectTokenizer` 封装，保证特殊 token 字面串不会被误解析。
+
+**输出**
+
+D9 最终产出的不是“一篇篇文档”，而是**固定长度的 packed 序列文件**。每条样本通常包含：
+
+- `input_ids`：长度为 `seq_len` 的 token ID 序列；
+- `attention_mask`：标记哪些位置是有效 token；
+- `loss_mask` 或 `labels`：标记哪些位置参与损失计算；
+- 样本边界信息：例如 `example_id`、`offset`、`is_boundary`，用于训练时构造块对角注意力掩码和重置位置编码。
+
+-------------------------
+
+### 5.2 编码：每篇文档如何变成 token 序列
+
+D9 的编码阶段不是简单调用 `tokenizer.encode()` 就结束，它至少要遵守几条约束。
+
+**(1) 使用 ProjectTokenizer**
+
+每篇文档必须通过 `ProjectTokenizer` 编码，不能绕过它直接操作底层 tokenizer。
+
+编码前会做 D2/D3/D6/D7 已经确定的规范化，例如 `nfc-lines-v1`；编码时不截断原文，保持完整文档。
+
+**(2) 每篇文档末尾追加一个 EOS**
+
+本项目约定：
+
+- PAD = ID 0；BOS = ID 1；EOS = ID 2。
+
+D9 对每篇正文编码后，会在末尾显式追加一个 EOS。这个 EOS 的作用是标记**文档结束**，而不是用来做 padding。
+
+**(3) 普通正文不能出现 ID 0/1/2**
+
+编码后会检查普通正文部分是否意外包含 PAD/BOS/EOS。如果某篇文档的正文里出现了 `<|eos|>` 字面串，`ProjectTokenizer` 应把它编码成普通字节 token，而不是真正的 EOS ID 2。
+
+**(4) 长文档会被切分成多段**
+
+如果一篇文档编码后长度超过 `seq_len`，它不能直接塞进一个 packed 序列。通常做法是：
+
+- 按 `seq_len` 切段；
+- 段内保持连续；
+- 段边界处仍然需要标记“这不是自然文档边界”。
+
+短文档则不会单独填充成一条样本，而是等待后续 packing 与其他文档拼接。
+
+**(5) 对短文档进行拼接**（后面的 packing 会具体解释）
+
+------------
+
+### 5.3 打乱
+
+打乱主要是为了后面的 packing 服务的。打乱发生在 packing 之前或 packing 的分块内部。它的主要目的有三个：
+
+1. **避免来源聚集**
+   如果按原始顺序 packing，可能连续很多条样本都来自同一个 crawl、同一个网站或同一类长度桶，训练分布会不稳定。
+2. **避免长度聚集**
+   如果先按长度排序再 packing，短文档会集中在一起，长文档也集中在一起。这样不同 batch 的平均长度差异会很大，影响训练稳定性。
+3. **降低跨文档模式偏差**
+   Packing 会把多篇文档拼进同一条序列。如果顺序不随机，某些来源、主题或长度的文档会更容易被拼到一起。
+
+但打乱通常不是“完全无约束”。工程上常见做法是：
+
+- 在分块内 shuffle；
+- 使用固定 seed；
+- 保证可复现；
+- 避免把验证集、测试集混入打乱范围。
+
+-----------
+
+### 5.4 连续 packing
+
+Packing 要解决的问题是：预训练模型通常要求每个训练样本具有相同长度，例如 `seq_len = 2048`、`4096` 或更大。如果每条样本都单独 padding，会浪费大量计算和显存。
+
+我们这里的做法是**连续 packing**：把多篇文档的 token 序列首尾相接，填满一个固定长度的序列。
+
+**简化示例**
+
+假设 `seq_len = 8`，已有三篇文档编码结果：
+
+```
+docA: [10, 20, 30, 40, 2]        # 2 是 EOS
+docB: [50, 60, 2]
+docC: [70, 80, 90, 100, 110, 2]
+```
+
+连续 packing 后可能得到：
+
+```
+packed_1: [10, 20, 30, 40, 2, 50, 60, 2]
+packed_2: [70, 80, 90, 100, 110, 2, ?, ?]
+```
+
+如果 `packed_2` 末尾不足 `seq_len`，会从下一篇文档继续补；如果最后没有足够文档，才可能用 PAD 填充。
+
+**为什么叫“连续”**
+
+因为它不是把每个样本单独 padding 到 `seq_len`，而是让 token 流尽可能连续地填满序列。这样可以显著减少 PAD token，提高 GPU 利用率。
+
+---------------
+
+### 5.5 关键约束：跨样本不能互相看见
+
+Packing 最容易出错的地方是：**拼在一起不等于可以互相注意。**
+
+#### 5.5.1 注意力掩码
+
+packed 序列里可能包含多个文档片段。训练时必须构造**块对角因果注意力掩码**，让每个 token 只能看到同一片段内、且不晚于自己的位置。
+
+#### 5.5.2 位置编码重置
+
+对于 RoPE 等位置编码，跨文档边界时需要重置位置编号，否则模型会误以为 `B1` 出现在 `A1` 之后很远的位置。
+
+因此 D9 输出中通常要保留：
+
+- 每个 token 属于哪篇文档；
+- 它在原始文档内的相对位置；
+- 它是否是某篇文档的最后一个 token。
+
+#### 5.5.3 损失掩码
+
+EOS 位置、PAD 位置、跨样本边界位置通常不应参与损失计算。常见做法是把这些位置的 label 设为 `-100`，或在 `loss_mask` 中标记为 0。
+
+例如：
+
+```
+tokens:     [A1, A2, A3, 2, B1, B2, 2, PAD]
+labels:     [A2, A3, 2, -100, B2, 2, -100, -100]
+loss_mask:  [1,  1,  1,  0,    1,  1,  0,    0]
+```
+
+这样模型只学习“每个 token 预测下一个 token”，但不会学习“从一篇文档预测下一篇文档”
+
+---------------
+
+
+
+
+
+
+
+
+
+
+
 ### 5.1 两遍处理，避免全量内存排序
 
-第一遍按原来源分片读取 D3+D7，完整编码每篇保留文档，然后追加 EOS，写到 `_encoded/00000/` 等目录；每片保存文档 offset、token 数、split 和排序键。第二遍把文档位置放进 SQLite，分别在各 split 内按 `SHA256(seed, packing, doc_id)`、再按 doc_id 排序，从映射的编码文件中读取各篇 token，依次写最终分片。
+第一遍由多个进程按原来源分片读取 D3+D7，每进程以有界批次完整编码每篇保留文档，然后追加 EOS，写到 `_encoded/00000/` 等目录；每片保存文档 offset、token 数、split 和排序键。第二遍把文档位置放进 SQLite，按 `SHA256(seed, packing, doc_id)`、再按 doc_id 排序。train 的哈希键空间分成连续区间并行读取、写 token 分片，随后按区间顺序合并文档索引和全局 offset；validation/test 按相同规则各自打包。
 
-正文不写进 SQLite，所有文档的 token 列表也不集中放进 RAM；最大的临时编码对象仍与单篇文档长度相关。全局打乱带来对 `_encoded` 的随机读取，服务器 NVMe、页缓存和库版本会影响吞吐。当前实现先保证一致性，未声称已测得编码或排序速度，也没有为 D9 提供 `--workers` 参数；D6 的 workers 参数不能套用到本命令。
+正文不写进 SQLite，所有文档的 token 列表也不集中放进 RAM；最大的临时编码对象仍与单篇文档长度相关。日志定期显示来源编码行数、索引文档数、train 各区间的文档打包与最终 offset 合并进度；SQLite 建排序索引期间用定时运行提示。全局打乱带来对 `_encoded` 的随机读取，服务器 NVMe、页缓存和库版本会影响吞吐，**尚未在服务器上实测加速倍数**。`--workers 1` 保留单进程 train 打包路径；`--workers 8` 对 14 个来源和 train 键区间并行，可能需要较高内存和随机 I/O 带宽。
 
 ### 5.2 文档边界与物理分片
 
@@ -296,6 +546,11 @@ with PackedDataset(root, manifest, 'train') as dataset:
     print({k: (v.shape, str(v.dtype)) for k, v in sample.items()})
     print('valid targets:', sample['loss_mask'].sum())
 PY
+
+# 输出
+windows: 4356252
+{'input_ids': ((2048,), 'int64'), 'labels': ((2048,), 'int64'), 'loss_mask': ((2048,), 'bool'), 'position_ids': ((2048,), 'int64')}
+valid targets: 2048
 ```
 
 结果包含等长的 `input_ids`、`labels`、`loss_mask`、`position_ids`。`labels` 已完成右移，训练代码不要再做第二次 shift。对 batch 后的 logits/labels 使用 `cross_entropy(..., ignore_index=-100)`，按有效 target 数归一化。EOS 是有效预测目标；padding 不是。
@@ -416,17 +671,20 @@ python scripts/prepare_data.py --root "$DATA_ROOT" validate \
 | 情形 | 当前行为与处理 |
 |---|---|
 | D7 已完成若干来源分片 | 重跑检查输入/侧车/输出 SHA256 后复用成功分片，重建全局审计索引 |
+| D7 已全部完成 | 保留 `split.json` 和原 D7 产物；本次 D8/D9 优化没有修改 D7 代码指纹 |
 | D8 sample 已完整提交，但 BPE 未完成 | 复用已校验的 sample；BPE 训练本身没有中途 checkpoint，需要重新训练 |
+| 旧版 D8 已有完整 `sample_manifest.json`，但没有 tokenizer 完成清单 | 确认旧进程退出后，在 D8 命令末尾加 `--resume-incomplete`；程序要求旧代码指纹、其余 identity 字段和两份 sample 哈希完全匹配，保存旧 identity 备份后复用 sample。只剩半截 sample 文件时停止并人工检查，不自动覆盖 |
 | D9 已编码若干来源分片 | 复用 `_encoded/<编号>/manifest.json` 完整提交的分片 |
+| 旧版 D9 已编码若干来源分片，但没有 packing 完成清单 | 确认旧进程退出后，在 D9 命令末尾加 `--resume-incomplete`；程序核对旧 identity 和已完成分片的哈希，再升级侧车 identity 并保留备份。无 manifest 的半成品仍须人工处理 |
 | D9 某些 split 已完成 | 校验并复用 `<split>/manifest.json`，未完成部分重新处理 |
 | 只有输出文件，没有完成侧车/manifest | 停止并指出路径，不能自动当成成功，也不盲目覆盖 |
 | 残留 `.train.building`、`.validation.building` 或 `.test.building` | 保留现场，确认无进程使用后人工移至本 release 的故障归档位置；仅该 split 重做，不会丢弃其他已提交 split |
-| identity/config/code/runtime 不一致 | 保留旧 release，建立新 release；不要改 JSON 中的哈希骗过校验 |
+| identity/config/runtime 不一致 | 保留旧 release，建立新 release；只允许上述同输入、已校验产物的旧代码迁移，不要手改 JSON 哈希 |
 | 磁盘不足 | 按第 2.3 节重新预留空间，检查明确的未提交产物；不要先删除 D3/D6 或已冻结 token 文件 |
 | heldout 不足 5M token | 在新 release 调整文档/簇切分，重新训练 tokenizer 和编码，不能拼入 train token 凑数 |
 | ordinary text 出现特殊 ID 或 round-trip 失败 | 检查是否绕过 ProjectTokenizer、换了 tokenizer 或重复规范化/截断，停止发布 |
 
-复用粒度是 D7 来源分片、D8 完整 sample/tokenizer、D9 来源编码分片及完整 split；**没有承诺任意一条文档或任意训练字节处恢复 D8/D9 作业。** 工作索引会重建，因此重跑仍有扫描与排序成本。路径提示要求先检查，是防止把半成品当完整文件，不表示需要从 D1 重跑。
+复用粒度是 D7 来源分片、D8 已完成的来源抽样部分或完整 sample/tokenizer、D9 来源编码分片及完整 split；**没有承诺任意一条文档或任意训练字节处恢复 D8/D9 作业。** 工作索引会重建，因此重跑仍有扫描与排序成本。D8 旧版 `sampling.sqlite` 不参与复用。路径提示要求先检查，是防止把半成品当完整文件，不表示需要从 D1 重跑。
 
 D10 报告会更新为最近一次检查状态；发生新失败时以最新报告为准。旧的 `release.json` 是针对其记录哈希的历史凭据，不能使损坏或已更改的文件继续有效。
 
@@ -439,10 +697,11 @@ D10 报告会更新为最近一次检查状态；发生新失败时以最新报�
 | 项目 | 本次计划/待填值 |
 |---|---|
 | 来源 data_version | `fineweb-edu-sample-10BT-e8ca86a612ab` |
-| 下游 release | 默认 `v1`，实际填写：待执行 |
+| 下游 release | `v1`；D7 已在该 release 完成，D8–D10 待执行 |
 | 实际开始/结束时间、服务器、环境 | 待填写，保留 environment.txt 与各阶段日志 |
 | D7 seed / 比例 | 42；99.8% / 0.1% / 0.1%，若修改需记录新 release |
-| D8 样本文本目标 / 总词表 | 1GiB / 32768；实际样本字节与训练耗时待测 |
+| D8 样本文本目标 / 总词表 | 5 GiB / 65536；实际样本字节与训练耗时待测 |
+| D8/D9 workers、机器内存与并行耗时 | 建议先试 8；记录实际值、峰值内存、抽样/训练/编码/打包各段耗时 |
 | D9 sequence_length / shard_tokens | 2048 / 50,000,000 |
 | tokenizer SHA256 / packing manifest SHA256 | 待产出 |
 | D10 状态 / 人工审核人 / 双卡实测日志 | 待完成 |
@@ -451,11 +710,11 @@ D10 报告会更新为最近一次检查状态；发生新失败时以最新报�
 
 | 指标 | train | validation | test | 合计/说明 |
 |---|---:|---:|---:|---|
-| D7 文档数 | 待测 | 待测 | 待测 | 等于 D6.kept |
-| D9 正文 token | 待测 | 待测 | 待测 | 本项目 tokenizer，排除 EOS |
-| D9 EOS token | 待测 | 待测 | 待测 | 各自等于文档数 |
-| D9 含 EOS token | 待测 | 待测 | 待测 | 正文 + EOS |
-| 窗口数 | 待测 | 待测 | 待测 | 各自 `ceil((T-1)/2048)` |
+| D7 文档数 | 9,066,352 | 9,140 | 9,083 | 9,084,575；用户已完成的 D7 清单，正文共 42,959,983,960 UTF-8 字节 |
+| D9 正文 token | 8912536479 | 9209769 | 9175324 | 本项目 tokenizer，排除 EOS |
+| D9 EOS token | 9066352 | 9140 | 9083 | 各自等于文档数 |
+| D9 含 EOS token | 8921602831 | 9218909 | 9184407 | 正文 + EOS |
+| 窗口数 | 4356252 | 4502 | 4485 | 各自 `ceil((T-1)/2048)` |
 | 有效 target / padding target | 待测 | 待测 | 待测 | 各自 `T-1` / `W*2048-(T-1)` |
 | sampler 每 epoch 跳过窗口 | 待测 | 不用于本训练 sampler | 不用于本训练 sampler | 与 world_size、batch_size 绑定，区别于 packing 丢弃数 |
 
@@ -500,6 +759,7 @@ PY
 | `src/decoder_only/data/split.py` | D7 按簇切分、冻结、跨片唯一性与分布统计 |
 | `src/decoder_only/data/tokenizer.py` | D8 train 抽样、BPE、统一 encode/decode 与往返检查 |
 | `src/decoder_only/data/packing.py` | D9 来源分片编码、磁盘排序、连续流与文档 offset |
+| `src/decoder_only/data/parallel_data.py` | D8/D9 共享的有界 worker 数、阶段进度和并行输入哈希校验 |
 | `src/decoder_only/data/dataset.py` | mmap 窗口读取、PAD label mask、rank 分配与确认游标 |
 | `src/decoder_only/data/release.py` | D10 校验、抽查文件、数量账本与发布门槛 |
 | `scripts/prepare_data.py` | 增加四个 D7–D10 子命令，保留旧入口 |
@@ -514,18 +774,18 @@ PY
 
 ### 10.2 已执行的本地验证
 
-在 2026-09-28 的本地 Windows 环境执行：
+初版在 2026-09-28 的本地 Windows 环境执行 17 项测试。2026-09-29 的 D8/D9 并行改动后重新执行全部测试，并新增单进程/多进程结果对照和旧版已完成部分的续跑测试：
 
 ```text
 python -X utf8 -m unittest discover -s tests -v
-Ran 17 tests
+Ran 19 tests
 OK
 ```
 
-其中 4 个为新增 D7–D10 测试方法，其余为已有 D0–D6/基准转换测试。新增的完整链路使用两个来源分片、80 行人工合成文本，经模拟 D6 排除后保留 72 篇；为小数据验证使用 60%/20%/20% 切分、300 词表、32 长度窗口、97 token 物理分片和降低的 heldout 门槛。**这些仅是测试夹具参数，不是服务器正式配置或真实语料统计。**
+其中 6 个为 D7–D10 测试方法，其余为已有 D0–D6/基准转换测试。新增的完整链路使用两个来源分片、80 行人工合成文本，经模拟 D6 排除后保留 72 篇；为小数据验证使用 60%/20%/20% 切分、300 词表、32 长度窗口、97 token 物理分片和降低的 heldout 门槛。**这些仅是测试夹具参数，不是服务器正式配置或真实语料统计。**
 
-已验证：行错配与重复簇被拒绝；D7–D9 完成清单重跑哈希稳定；普通 `<|eos|>` 不变成边界 ID；长文无截断；每个 split 的有效 labels 恰好覆盖连续流除首 token 外的所有 token；窗口跨物理分片、最后 PAD 屏蔽；token 文件篡改被拦截；heldout 不足时不会发布；rank 分区不重叠、确认游标恢复一致、改变 world_size 被拒绝；mmap 对象序列化后重新打开文件；两进程 CPU 冒烟有实际读取。
+已验证：行错配与重复簇被拒绝；D7–D9 完成清单重跑哈希稳定；D8 抽样文本 SHA256 及 D9 三个 split 的完整 token 流在 `workers=1` 与 `workers=2` 下逐字节一致；旧版 identity 只有在显式 `--resume-incomplete` 且已有产物哈希通过时才能迁移；普通 `<|eos|>` 不变成边界 ID；长文无截断；每个 split 的有效 labels 恰好覆盖连续流除首 token 外的所有 token；窗口跨物理分片、最后 PAD 屏蔽；token 文件篡改被拦截；heldout 不足时不会发布；rank 分区不重叠、确认游标恢复一致、改变 world_size 被拒绝；mmap 对象序列化后重新打开文件；两进程 CPU 冒烟有实际读取。
 
 首次受限运行的双进程测试因 Windows 进程通信管道权限失败，获准在沙箱外运行本地合成测试后通过。旧 D3–D6 夹具另有共享目录重复 mkdir 和 SQLite 连接未显式关闭的问题，已修复；旧业务模块未修改。
 
-当前结论：**D7–D10 代码、配置和操作说明就绪，本地合成数据回归通过；正式服务器执行、真实 token 规模、人工审核与持续双卡训练读取仍待完成。**
+当前结论：**D7 已由用户在服务器完成；D8/D9 并行优化与进度输出通过本地合成数据回归，但正式语料的耗时、内存/磁盘峰值和加速倍数还需在服务器测量。D10、人工审核与持续双卡训练读取仍待完成。**

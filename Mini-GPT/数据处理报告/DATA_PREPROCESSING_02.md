@@ -1,8 +1,8 @@
-# 数据预处理报告（二）
+# 数据预处理笔记（二）
 
 D3 质量与隐私、D4 精确去重、D5 近似去重、D6 基准污染检查
 
-**状态与边界**
+## 状态与边界
 
 这份笔记记录 D3–D6 的代码、产物契约、服务器操作和实验结果。截至本次整理，已有记录显示：D5 两篇超长文档复核后保留，D6 的 35 道天然短题经审核允许作为覆盖例外，随后污染扫描返回了 `contamination.json` 完成清单路径。已完成的 D0–D2 结果见 [DATA_PREPROCESSING_01.md](DATA_PREPROCESSING_01.md)：14 个来源分块、9,672,101 行原始/规范化文档。第 8 节整理命令与已有输出，第 10 节汇总实验报告。四阶段完整 JSON 报告尚未附入本地，保留数、去重数、命中数及耗时仍待从服务器归档；不能把“程序完成”写成“人工验收已完成”。本次仅编辑文档，没有执行数据处理、测试或远程核验。
 
@@ -589,9 +589,9 @@ D6 拆成两个必须先后执行的动作：
 | 审阅对象           | 服务器路径 / 文件                                            | 审阅要点                                                     |
 | ------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
 | 语料样本           | `reports/data/V/profile.json`、`review_samples.jsonl`        | 先记录样本中的短文、非英文、模板、乱码、邮箱/电话以及错杀风险；含原文的样本文件不放进仓库 |
-| 质量策略           | `data_quality_v1.json`                                         | 默认**只删除缺失或规范化后为空的文本**；短文、低英语分数、重复行、乱码替换字符、链接密度**只标记待复核**。邮箱和明显电话模式替换为 `[EMAIL]`/`[PHONE]`，规则有漏检与误替换，需人工抽查。更改 `drop_flags` 前应先看过被标记样本 |
-| 近重复策略         | `data_near_v1.json`          | 首版用 word 5-gram、128 个 MinHash 分量、32 bands × 4 rows，LSH 只生成候选，再用 hashed-shingle Jaccard ≥ 0.8 确认边；连通分量为近重复簇，按上游 `int_score`、`score`、正文长度、`doc_id` 顺序选保留者。 |
-| 污染策略与评测计划 | `data_contamination_v1.json`、`benchmark_plan_v1.json` | 在服务器先运行 `benchmarks` 再运行 `contamination`。真实 commit 与 JSONL SHA256 自动登记，不手工编造。`reference_preflight.json` 仅证明参照文件通过检查，语料扫描完成后才会产生本轮 `contamination_report.json` |
+| 质量策略           | [data_quality_v1.json](../configs/data_quality_v1.json)      | 默认**只删除缺失或规范化后为空的文本**；短文、低英语分数、重复行、乱码替换字符、链接密度**只标记待复核**。邮箱和明显电话模式替换为 `[EMAIL]`/`[PHONE]`，规则有漏检与误替换，需人工抽查。更改 `drop_flags` 前应先看过被标记样本 |
+| 近重复策略         | [data_near_v1.json](../configs/data_near_v1.json)            | 首版用 word 5-gram、128 个 MinHash 分量、32 bands × 4 rows，LSH 只生成候选，再用 hashed-shingle Jaccard ≥ 0.8 确认边；连通分量为近重复簇，按上游 `int_score`、`score`、正文长度、`doc_id` 顺序选保留者。 |
+| 污染策略与评测计划 | [data_contamination_v1.json](../configs/data_contamination_v1.json)、[benchmark_plan_v1.json](../configs/benchmark_plan_v1.json) | 在服务器先运行 `benchmarks` 再运行 `contamination`。真实 commit 与 JSONL SHA256 自动登记，不手工编造。`reference_preflight.json` 仅证明参照文件通过检查，语料扫描完成后才会产生本轮 `contamination_report.json` |
 
 污染相关的计划、配置和清单各司其职：
 
@@ -601,7 +601,7 @@ D6 拆成两个必须先后执行的动作：
 | `data_contamination_v1.json`       | 严格配置：`ngram_words=13`(片段长度)、`min_short_words=5`(短题阈值)。 |
 | `benchmark_manifest.template.json` | manifest 的空模板（`{"datasets": []}`），是最终 `benchmark_manifest.json` 该长成的"骨架示例"，告诉你成品结构 |
 
-本次实际选择的是 `data_contamination_v1_allow_uncovered.json`：它与严格配置均使用 102,000 词上限，仅把 `allow_uncovered_examples` 设为 `true`，对应已经完成的 35 道短题审核。模板本身不是可直接运行的空基准集；真正输入是服务器生成的 `benchmark_manifest.json`。
+本次实际选择的是 [data_contamination_v1_allow_uncovered.json](../configs/data_contamination_v1_allow_uncovered.json)：它与严格配置均使用 102,000 词上限，仅把 `allow_uncovered_examples` 设为 `true`，对应已经完成的 35 道短题审核。模板本身不是可直接运行的空基准集；真正输入是服务器生成的 `benchmark_manifest.json`。
 
 ### 7.2 测试与本次执行边界
 
