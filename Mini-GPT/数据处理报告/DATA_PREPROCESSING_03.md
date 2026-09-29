@@ -328,27 +328,9 @@ python scripts/prepare_data.py --root "$DATA_ROOT" pack \
 
 -----------
 
-### 5.1 输入和输出
+### 5.1 原理
 
-**输入**
-
-- D7 的 `split=train` 文档；
-- D8 产出的 `tokenizer.json`；
-- D8 的 sample manifest，用于确认编码对象确实来自训练集；
-- 本项目 `ProjectTokenizer` 封装，保证特殊 token 字面串不会被误解析。
-
-**输出**
-
-D9 最终产出的不是“一篇篇文档”，而是**固定长度的 packed 序列文件**。每条样本通常包含：
-
-- `input_ids`：长度为 `seq_len` 的 token ID 序列；
-- `attention_mask`：标记哪些位置是有效 token；
-- `loss_mask` 或 `labels`：标记哪些位置参与损失计算；
-- 样本边界信息：例如 `example_id`、`offset`、`is_boundary`，用于训练时构造块对角注意力掩码和重置位置编码。
-
--------------------------
-
-### 5.2 编码：每篇文档如何变成 token 序列
+#### 5.1.1 编码：每篇文档如何变成 token 序列
 
 D9 的编码阶段不是简单调用 `tokenizer.encode()` 就结束，它至少要遵守几条约束。
 
@@ -382,9 +364,9 @@ D9 对每篇正文编码后，会在末尾显式追加一个 EOS。这个 EOS �
 
 **(5) 对短文档进行拼接**（后面的 packing 会具体解释）
 
-------------
+-----------
 
-### 5.3 打乱
+#### 5.1.2 打乱
 
 打乱主要是为了后面的 packing 服务的。打乱发生在 packing 之前或 packing 的分块内部。它的主要目的有三个：
 
@@ -404,7 +386,7 @@ D9 对每篇正文编码后，会在末尾显式追加一个 EOS。这个 EOS �
 
 -----------
 
-### 5.4 连续 packing
+#### 5.1.3 连续 packing
 
 Packing 要解决的问题是：预训练模型通常要求每个训练样本具有相同长度，例如 `seq_len = 2048`、`4096` 或更大。如果每条样本都单独 padding，会浪费大量计算和显存。
 
@@ -435,17 +417,17 @@ packed_2: [70, 80, 90, 100, 110, 2, ?, ?]
 
 ---------------
 
-### 5.5 关键约束：跨样本不能互相看见
+#### 5.1.4 关键约束：跨样本不能互相看见
 
 Packing 最容易出错的地方是：**拼在一起不等于可以互相注意。**
 
-#### 5.5.1 注意力掩码
+##### 1 注意力掩码
 
 packed 序列里可能包含多个文档片段。训练时必须构造**块对角因果注意力掩码**，让每个 token 只能看到同一片段内、且不晚于自己的位置。
 
-#### 5.5.2 位置编码重置
+##### 2. 位置编码重置
 
-对于 RoPE 等位置编码，跨文档边界时需要重置位置编号，否则模型会误以为 `B1` 出现在 `A1` 之后很远的位置。
+对于 RoPE 等位置编码，跨文档边界时需要重置位置编号，否则模型会误以为 `B1` 出现在 `A1` 之后很远的位置**（注意：这里我们的实验没有做文档隔离！关于是否需要文档隔离，目前学界还存在争议）**。
 
 因此 D9 输出中通常要保留：
 
@@ -453,7 +435,7 @@ packed 序列里可能包含多个文档片段。训练时必须构造**块对�
 - 它在原始文档内的相对位置；
 - 它是否是某篇文档的最后一个 token。
 
-#### 5.5.3 损失掩码
+##### 3. 损失掩码
 
 EOS 位置、PAD 位置、跨样本边界位置通常不应参与损失计算。常见做法是把这些位置的 label 设为 `-100`，或在 `loss_mask` 中标记为 0。
 
@@ -469,35 +451,73 @@ loss_mask:  [1,  1,  1,  0,    1,  1,  0,    0]
 
 ---------------
 
+### 5.2 工程
 
+#### 5.2.1 输入和输出
 
+**输入**
 
+- D7 的 `split=train` 文档；
+- D8 产出的 `tokenizer.json`；
+- D8 的 sample manifest，用于确认编码对象确实来自训练集；
+- 本项目 `ProjectTokenizer` 封装，保证特殊 token 字面串不会被误解析。
 
+**输出**
 
+D9 最终产出的不是“一篇篇文档”，而是**固定长度的 packed 序列文件**。每条样本通常包含：
 
+- `input_ids`：长度为 `seq_len` 的 token ID 序列；
+- `attention_mask`：标记哪些位置是有效 token；
+- `loss_mask` 或 `labels`：标记哪些位置参与损失计算；
+- 样本边界信息：例如 `example_id`、`offset`、`is_boundary`，用于训练时构造块对角注意力掩码和重置位置编码。
 
+-------------------------
 
+#### 5.2.2 两遍处理：为了不把全部数据塞进内存
 
+**核心矛盾**：全局打乱（shuffle）训练数据通常需要把所有 token 集中排序，但这在数百 GB 规模下内存根本放不下。
 
-### 5.1 两遍处理，避免全量内存排序
+**做法是拆成"两遍（two-pass）"**：
 
-第一遍由多个进程按原来源分片读取 D3+D7，每进程以有界批次完整编码每篇保留文档，然后追加 EOS，写到 `_encoded/00000/` 等目录；每片保存文档 offset、token 数、split 和排序键。第二遍把文档位置放进 SQLite，按 `SHA256(seed, packing, doc_id)`、再按 doc_id 排序。train 的哈希键空间分成连续区间并行读取、写 token 分片，随后按区间顺序合并文档索引和全局 offset；validation/test 按相同规则各自打包。
+- **第一遍（编码）**：多个进程按数据来源分片，各自读取原始文档（文中的 D3、D7 是来源编号）。每个进程把每一篇文档编码成 token，篇末追加一个 EOS 结束符，写到 `_encoded/00000/` 等分片目录里。这一遍只记录"每篇文档存在哪、有多长、属于 train/val/test 哪个划分、以及排序用的键"，**不把正文存进数据库**。
+- **第二遍（排序+打包）**：把这些"文档位置元信息"放进 SQLite，按 `SHA256(seed, packing, doc_id)` 这个哈希值排序（再按 doc_id 作次要键）。因为哈希是伪随机且可复现的，按它排序就等价于一次"可复现的全局乱序"，而不需要真的把所有 token 搬进内存。
 
-正文不写进 SQLite，所有文档的 token 列表也不集中放进 RAM；最大的临时编码对象仍与单篇文档长度相关。日志定期显示来源编码行数、索引文档数、train 各区间的文档打包与最终 offset 合并进度；SQLite 建排序索引期间用定时运行提示。全局打乱带来对 `_encoded` 的随机读取，服务器 NVMe、页缓存和库版本会影响吞吐，**尚未在服务器上实测加速倍数**。`--workers 1` 保留单进程 train 打包路径；`--workers 8` 对 14 个来源和 train 键区间并行，可能需要较高内存和随机 I/O 带宽。
+**工程细节**：
 
-### 5.2 文档边界与物理分片
+- 日志会定时打印进度（已编码行数、索引文档数、train 各区间打包进度、offset 合并进度），因为 SQLite 建排序索引、以及后续合并 offset 都比较耗时。
+- 全局乱序会引入对 `_encoded` 目录的**随机读**，实际吞吐受服务器 NVMe、页缓存、数据库版本影响。
+- `--workers 1` 走保守的单进程路径；`--workers 14` 会同时对 14 个来源 + train 键区间并行，但代价是需要更多内存和更高的随机 I/O 带宽。
 
-```text
+> 一句话：用"两遍处理 + 按哈希排序 + 元信息进 SQLite"换来**内存可控、可复现的全局打乱**。
+
+-------------
+
+#### 5.2.3 文档边界与物理分片
+
+**文档边界（标记一篇结束）**：
+
+- 每篇文档结尾**恰好追加一个 EOS**，正常正文里绝不会出现这种控制 token。BOS（起始符）这一版预留但不插入。
+- 拼接方式是直接首尾相连成一条连续流：
+
+```
 文档 A: a0 a1 a2 EOS
 文档 B: b0 b1 EOS
 连续流: a0 a1 a2 EOS b0 b1 EOS ...
 ```
 
-每篇恰好一个追加的 EOS，普通正文中不会出现控制 token ID。BOS 本版预留但不插入。训练使用普通 causal mask，EOS 表示边界，不阻断对之前文档的注意；position 在每个训练窗口从 0 开始。若以后改为文档隔离的 attention，需要新实验与新的 mask/position/loss 约定。
+- 训练用普通 causal（因果）mask：**EOS 只当"边界标记"，并不会阻断模型对前面文档的注意力**；每个训练窗口的 position 都从 0 重新开始。如果以后想改成**文档隔离 attention**，那是另一套实验，需要新的 mask / position / loss 约定
 
-物理分片默认 50,000,000 token，即约 100MB 十进制。分片可以切在文档中间，也可以切在训练窗口中间；读取器按全局 offset 跨片拼接，不把每片末尾当作尾巴丢掉。二进制无文件头，以 manifest 的 `<u2`、长度与 SHA256 解释，读取后转为 `int64` 再进入 embedding/loss。
+**物理分片（一条长流怎么存成文件）**：
 
-### 5.3 2048 个输入为什么需要读取 2049 个 token
+- 默认每个文件存 **5000万 token**，约合 100MB
+- 分片边界**可以切在一篇文档中间、也可以切在一个训练窗口中间**——不做"必须对齐文档/窗口"的强约束。读取器会按全局 offset 跨文件拼接，**不会把每片末尾当成"尾巴"丢掉**
+- 二进制文件**没有文件头**，靠外部 manifest 里记录的 `<u2`（numpy 格式码，表示无符号 16 位整型）、长度和 SHA256 校验来解释；读入后转成 `int64` 再喂给 embedding / loss 计算。
+
+-------------------------
+
+#### 5.2.4 为什么输入 2048 个却读 2049 个 token
+
+**核心原理**：语言模型是"用前面的 token 预测下一个 token"。所以模型要看到 `inputs`，并拿"往后错一位"的 token 当 `labels` 来算 loss。
 
 用长度 4 的示例说明与实际 2048 相同的规则：
 
@@ -511,24 +531,33 @@ loss_mask:  [1,  1,  1,  0,    1,  1,  0,    0]
     labels：            t5 t6 t7 t8
 ```
 
-窗口从 `i*L` 开始读 `L+1` 个 token，步长为 `L`；相邻窗口重叠一个用于衔接的输入 token，target 不重复。每个 split 第一个 token 没有前文，因此不作为 target；其余 token（包括 EOS）恰好作为 target 一次。
+窗口从 `i*L` 开始读 `L+1` 个 token，步长为 `L`；相邻窗口重叠一个用于衔接的输入 token，target 不重复。
 
-末尾不足时由读取器补 PAD，存储文件中不写 PAD；无效 labels 设为 `-100`，对应 `loss_mask=False`。令 `T` 为一个 split 的含 EOS token 数、`N` 为文档数、`W` 为窗口数：
+**末尾补齐（padding）**：
 
-```text
-T = text_tokens + N
-EOS 数 = N
-valid_targets = T - 1
-W = ceil((T - 1) / L)
-padding_targets = W * L - (T - 1)
-discarded_tokens = 0
-```
+- 数据末尾凑不满一个窗口时，**由读取器在运行时补 PAD**，**存储文件里不写 PAD**（省空间）。
+- 无效位置的 label 设成 `-100`，并置 `loss_mask=False`——`-100` 是 PyTorch 交叉熵默认忽略的索引值，所以这些 PAD 位置不产生 loss。
+
+**一组会计恒等式**（全部写进 `packing_report.json` 便于核对）：
+
+设 `T` = 某 split 含 EOS 的 token 总数，`N` = 文档数，`W` = 窗口数，`L` = 窗口长度：
+
+| 字段             | 公式            | 含义                                   |
+| :--------------- | :-------------- | :------------------------------------- |
+| T                | text_tokens + N | 正文 token + 每篇一个 EOS              |
+| EOS 数           | N               | 每篇一个结束符                         |
+| valid_targets    | T − 1           | 第一个 token 不作 target，所以少 1     |
+| W                | ceil((T−1) / L) | 需要多少个窗口装下这些 target          |
+| padding_targets  | W·L − (T−1)     | 最后一个窗口没填满，补 PAD 的数量      |
+| discarded_tokens | 0               | packing 阶段一个正文/边界 token 都没丢 |
 
 这些字段都写入 `packing_report.json`。`discarded_tokens=0` 指 packing 阶段未丢弃正文/边界 token；后续分布式 sampler 为对齐完整 batch 而跳过的 epoch 尾部窗口另计。
 
+-----------------
+
 ## 6. 训练读取接口与恢复游标
 
-### 6.1 读取一条窗口
+### 6.1 读取一条窗口：`PackedDataset`
 
 安装本项目后可直接使用，下面只读数据，不启动模型训练：
 
@@ -553,28 +582,76 @@ windows: 4356252
 valid targets: 2048
 ```
 
-结果包含等长的 `input_ids`、`labels`、`loss_mask`、`position_ids`。`labels` 已完成右移，训练代码不要再做第二次 shift。对 batch 后的 logits/labels 使用 `cross_entropy(..., ignore_index=-100)`，按有效 target 数归一化。EOS 是有效预测目标；padding 不是。
+磁盘上是两个东西——一串二进制 token 分片（`<u2`）+ 一个记录文档位置/偏移的索引。`PackedDataset` 是封装在它们之上的「标准 PyTorch Dataset」， `dataset[0]` 能拿到一条能直接送进模型的训练样本。
 
-`PackedDataset` 默认在初始化验证 token 文件 SHA256；DataLoader 的 spawn worker 只序列化元数据并重新 mmap 文件，不把整个语料 pickle 进进程。应在启动 worker 前完成验证，并保证运行期间数据只读。实际 PyTorch DataLoader 的 worker/prefetch、GPU 搬运与训练性能仍需服务器集成测试。
+每条样本是**四个等长（2048）的数组**：
 
-### 6.2 双 rank 的窗口分配
+| 字段           | 类型  | 含义                               |
+| :------------- | :---- | :--------------------------------- |
+| `input_ids`    | int64 | 模型这一窗口看到的输入 token       |
+| `labels`       | int64 | 预测目标，**已经帮你右移错位好了** |
+| `loss_mask`    | bool  | 哪些位置算 loss（PAD 处为 False）  |
+| `position_ids` | int64 | 每个窗口内部从 0 开始的位置编号    |
 
-`RankWindowSampler` 对窗口编号做由 seed/epoch 决定的可逆仿射置换，再按全局 batch 顺序分给各 rank。它不是从所有排列中均匀采样的随机置换；文档级全局哈希打乱已在 D9 完成。每个 epoch 内各 rank 无重复窗口、完整 batch 数一致，不能给每张卡各自独立 shuffle 整个数据集。
+三个关键约定：
 
-```python
-from decoder_only.data.dataset import RankWindowSampler
+1. **`labels` 已完成右移，训练代码不要再 shift 第二次。** 这是最容易踩的坑——5.3 讲的「读 2049、错一位」这套逻辑，读取器在返回时就做完了。你如果按惯例又 `labels = input_ids[:, 1:]` 一遍，就错了两次，模型会学崩。
+2. **算 loss 用 `cross_entropy(..., ignore_index=-100)`，并按有效 target 数归一化。** 承接 5.3：无效位置（split 首 token、末尾 PAD）被设成 `-100`，`-100` 正是 PyTorch 交叉熵默认忽略的索引。**EOS 算有效目标（要学），padding 不算。**
+3. **`windows: 4356252`** 就是 train 的窗口总数，和 9.2 账本里 `ceil((T-1)/2048)=4356252` 对得上。
+
+`PackedDataset` 默认在初始化验证 token 文件 SHA256；DataLoader 的 spawn worker 只序列化元数据并重新 mmap 文件，不把整个语料 pickle 进进程。应在启动 worker 前完成验证，并保证运行期间数据只读。实际 PyTorch DataLoader 的 worker/prefetch、GPU 搬运与训练性能仍需**服务器集成测试**。
+
+--------------
+
+### 6.2 双 rank 的窗口分配：`RankWindowSampler`
+
+**解决的问题**：现在有两张卡（`world_size=2`），共 435 万个窗口，**每张卡该读哪些窗口、epoch 怎么打乱、训练中断了怎么接着读**。
+
+**为什么不能「每张卡各自 shuffle 整个数据集」**：那样两张卡会读到大量重复窗口、且各自 batch 数不一致，梯度就乱套了。正确做法是**全局统一分配**：
+
+- 先对**窗口编号**做一次「由 seed/epoch 决定的**可逆仿射置换**」，再按全局 batch 顺序切给各 rank。
+- 这**不是**从所有排列里均匀采样的随机置换，只是个便宜的、可复现的「打乱编号」手法。**真正的文档级全局打乱早在 D9 打包时就做完了**，这里只是给「已经乱好的窗口」再排一次访问顺序。
+- 保证：**同一 epoch 内各 rank 无重复、完整 batch 数一致**；下一个 epoch 换新置换。
+- 用法：DataLoader 里传这个 sampler、`batch_size` 与它一致、**不要再设 `shuffle=True`**。
+
+**epoch 末尾的零头怎么处理**：
+
+- 每个 epoch 只取 `floor(W / (world_size × batch_size))` 个**完整全局 batch**，凑不满的窗口**不补重复样本，而是记为 `dropped_windows`（丢弃）**。
+
+- 梯度累积末尾不足一个 optimizer step 的处理仍由未来 trainer 明确记录，不属于当前读取器自动处理的功能。
+
+**`confirmed_batches`恢复游标**
+
+断点续训最怕两件事：**重复训练**（见过一遍的数据又见一遍，等于数据泄漏/浪费）和**漏训**。这套机制靠一个概念解决——**`confirmed_batches`（已确认游标）**：
+
+- checkpoint 里存：packing manifest 哈希、tokenizer 哈希、代码版本，以及**每个 rank 的 `sampler.state_dict(confirmed_batches)`**。
+- **`confirmed_batches` = 本 epoch 内「已经完成优化器更新」所确认的 microbatch 数**（用梯度累积时，一个 step 的所有 microbatch 一起确认）。
+- **核心语义**：只有「真正被 optimizer.step() 消费掉」的数据才算已读；**预取的、或刚 yield 出来的数据 ≠ 已消费，游标不会推进**。这样即使进程崩在「取到数据但还没训练」的瞬间，恢复时也不会把那段数据算成已读而漏掉。
+- **恢复用 `RankWindowSampler.restore(...)`**，它会校验算法版本、窗口数、rank、world_size、batch_size 全部一致才恢复。**关键限制：换卡数（改 world_size）不算同一进度，无法无缝续训**——因为窗口是按 `world_size × batch_size` 切的，卡数一变切分方式就变了。
+
+**冒烟测试（smoke test）**：不启动真实训练，只用 Python 脚本验证打包好的数据集能不能被正确读取、sampler 分配窗口是否正常。
+
+```bash
+python - <<'PY' 
+import os
+from pathlib import Path
+from decoder_only.data.dataset import RankWindowSampler,PackedDataset
 
 # rank 从训练进程环境获取，示例值为 0；正式配置 world_size=2。
-sampler = RankWindowSampler(len(dataset), rank=0, world_size=2, batch_size=8,
+root = Path(os.environ['DATA_ROOT'])
+manifest = Path(os.environ['RELEASE_MANIFESTS']) / 'packing.json'
+with PackedDataset(root, manifest, 'train') as dataset:
+    sample = dataset[0]
+sampler = RankWindowSampler(len(dataset), rank=0, world_size=4, batch_size=16,
                             seed=42, epoch=0, consumed_batches=0)
 print('epoch tail windows omitted:', sampler.dropped_windows)
+PY
+
+# 输出
+epoch tail windows omitted: 28
 ```
 
-上例中的 dataset 应处于打开状态。用 PyTorch DataLoader 时传入同一个 sampler，`batch_size` 与这里一致，不再设置 `shuffle=True`；不要只把 sampler 和 DataLoader 的 batch 大小改一边。
-
-每个 epoch 使用 `floor(W / (world_size*batch_size))` 个完整全局 batch，其余窗口不补重复样本，而是记录为 `dropped_windows`；下一个 epoch 使用新置换。梯度累积末尾不足一个 optimizer step 的处理仍由未来 trainer 明确记录，不属于当前读取器自动处理的功能。
-
-checkpoint 中保存 packing manifest 哈希、tokenizer 哈希、代码版本，以及每个 rank 的 `sampler.state_dict(confirmed_batches)`。`confirmed_batches` 是本 epoch 已完成优化器更新所确认的 microbatch 数；使用梯度累积时一并确认这一 step 的全部 microbatch。预取或刚 yield 的数据不等于已消费，迭代器不会自行推进已确认游标。恢复用 `RankWindowSampler.restore(...)`，会检查算法版本、窗口数、rank、world_size 和 batch_size；改变卡数不能作为同一进度无缝恢复。
+-------------
 
 ## 7. D10：自动验收和发布状态
 
@@ -583,6 +660,12 @@ python scripts/prepare_data.py --root "$DATA_ROOT" validate \
   --source "$SOURCE" --release "$RELEASE" \
   --config configs/data_validation_v1.json \
   2>&1 | tee "$RELEASE_REPORTS/d10.log"
+  
+# 输出
+D10 train: checksums, IDs, EOS, offsets and windows passed
+D10 validation: checksums, IDs, EOS, offsets and windows passed
+D10 test: checksums, IDs, EOS, offsets and windows passed
+/data0/zcc/datasets/decoder-only/reports/data/fineweb-edu-sample-10BT-e8ca86a612ab/v1/data_release_report.json
 ```
 
 ### 7.1 自动检查的范围
@@ -622,7 +705,7 @@ python scripts/prepare_data.py --root "$DATA_ROOT" validate \
 ```bash
 python scripts/benchmark_data.py --root "$DATA_ROOT" \
   --manifest "$RELEASE_MANIFESTS/packing.json" \
-  --world-size 2 --batch-size 8 --seconds 60 \
+  --world-size 4 --batch-size 16 --seconds 60 \
   2>&1 | tee "$RELEASE_REPORTS/loader_cpu.log"
 ```
 
