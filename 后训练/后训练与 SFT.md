@@ -10,7 +10,7 @@
 
 ## 一、从预训练到对话助手
 
-<img src="figures\LLM框架.png" alt="LLM框架" style="zoom:50%;" />
+<img src="figures/LLM框架.png" alt="LLM框架" style="zoom:50%;" />
 
 这是一个典型训练路径。
 
@@ -106,7 +106,7 @@ $$
 
 考虑这个训练序列：
 
-<img src="figures\一个例子.png" alt="LLM框架" style="zoom:55%;" />
+<img src="figures/一个例子.png" alt="LLM框架" style="zoom:55%;" />
 
 我们希望模型学会“用户问过拟合时，Assistant 如何回答”，而不是让模型重点学习如何生成用户的问题本身。
 
