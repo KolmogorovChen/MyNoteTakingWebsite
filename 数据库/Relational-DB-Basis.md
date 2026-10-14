@@ -1365,3 +1365,257 @@ WHERE e.grade >= 90;
 先形成左连接结果，再筛选成绩。未匹配行的成绩为 `NULL`，无法通过筛选，因此会被删除。
 
 ---------
+
+#### 4.2 并、交、差与重复值处理
+
+##### （1）并、交、差
+
+设两个查询结果为：
+
+- $A$：选修 C1 的学生学号，$\{S1,S2\}$。
+- $B$：选修 C2 的学生学号，$\{S1,S3\}$。
+
+| 运算         | SQL 运算符  | 结果       | 含义               |
+| ------------ | ----------- | ---------- | ------------------ |
+| 并 $A\cup B$ | `UNION`     | S1、S2、S3 | 至少选了一门       |
+| 交 $A\cap B$ | `INTERSECT` | S1         | 两门都选了         |
+| 差 $A-B$     | `EXCEPT`    | S2         | 选了 C1，但没选 C2 |
+
+以并运算为例：
+
+```sql
+SELECT sid
+FROM Enrollment
+WHERE cid = 'C1'
+
+UNION
+
+SELECT sid
+FROM Enrollment
+WHERE cid = 'C2';
+```
+
+将中间的 `UNION` 换成 `INTERSECT` 或 `EXCEPT`，就分别得到交、差。
+
+进行集合运算时，两侧查询必须满足：
+
+- 输出列数相同。
+- 对应位置的列类型兼容。
+- 列按位置对应，不按列名自动匹配。
+
+---------------
+
+##### （2）重复值处理：`UNION` 与 `UNION ALL`
+
+`UNION`、`INTERSECT`、`EXCEPT` 默认采用去重语义，重复判断针对**整个输出行**。
+
+`UNION ALL` 则保留两侧的全部行，包括重复行：
+
+```sql
+SELECT sid
+FROM Enrollment
+WHERE cid = 'C1'
+
+UNION ALL
+
+SELECT sid
+FROM Enrollment
+WHERE cid = 'C2';
+```
+
+本例的区别是：
+
+| 运算        | 输出内容，不表示顺序 |
+| ----------- | -------------------- |
+| `UNION`     | S1、S2、S3           |
+| `UNION ALL` | S1、S2、S1、S3       |
+
+S1 在两侧各出现一次，所以 `UNION ALL` 保留两次。
+
+选择依据是查询需求：
+
+- 需要“不同学生名单”：使用 `UNION`。
+- 需要保留所有记录及其重复次数：使用 `UNION ALL`。
+
+-----------
+
+### 5. 重命名
+
+查询中可以给列或表指定临时名称，称为**别名（Alias）**。别名用于提高结果的可读性、简化 SQL，以及区分不同表中的同名列。
+
+**别名只在相应查询范围内生效，不会修改数据库中的实际名称。**
+
+| 别名类型 | 命名对象         | 主要用途                       |
+| -------- | ---------------- | ------------------------------ |
+| 列别名   | 输出列或计算结果 | 明确结果含义                   |
+| 表别名   | 查询中的表引用   | 简化引用、区分来源、支持自连接 |
+
+------------
+
+#### 5.1 列重命名：AS 子句
+
+基本语法：
+
+```sql
+SELECT sid AS student_id,        # SELECT 列名或表达式 AS 别名
+       name AS student_name
+From Student;                    # FROM 表名;
+```
+
+列别名尤其适合给**计算结果**命名：
+
+```sql
+SELECT sid,
+       cid,
+       grade / 10.0 AS grade_10
+FROM Enrollment;
+```
+
+----------
+
+#### 5.2 表别名：简化引用并消除歧义
+
+基本语法：
+
+```sql
+SELECT s.sid, s.name
+FROM Student AS s
+WHERE s.major = 'Statistics';
+```
+
+同一张表参与查询两次时，需要用不同别名区分。
+
+```sql
+SELECT a.name as name_1,
+       b.name as name_2
+FROM Student AS a
+JOIN Student AS b
+    ON a.major = b.major
+    AND a.sid < b.sid;
+```
+
+`a`、`b` 表示同一张学生表的两次引用。`a.sid < b.sid` 排除自己与自己的配对，并避免同一对学生正反各出现一次。
+
+-------------
+
+### 6. 聚合与分组
+
+聚合用于**将多行数据汇总成统计结果**；分组用于**分别统计不同类别的数据**。
+
+#### 6.1 聚合函数
+
+聚合函数对一列数据做计算，最后返回**一个值**。
+
+| 函数                  | 作用               | 说明         |
+| :-------------------- | :----------------- | :----------- |
+| `AVG(col)`            | 平均值             | 必须是数值   |
+| `SUM(col)`            | 求和               | 必须是数值   |
+| `MIN(col)`            | 最小值             | 可以是字符串 |
+| `MAX(col)`            | 最大值             | 可以是字符串 |
+| `COUNT(*)`            | 统计行数           | 包含 NULL    |
+| `COUNT(col)`          | 统计非空值个数     | 忽略 NULL    |
+| `COUNT(DISTINCT col)` | 统计不同非空值个数 | 去重         |
+| `STDDEV(col)`         | 标准差             | 必须是数值   |
+
+重要规则：
+
+- `AVG`、`SUM`、`STDDEV` 的输入必须是**数值类型**。
+- `MIN`、`MAX` 可以用于字符串，比如按字母顺序找最小/最大。
+- 除 `COUNT(*)` 外，聚合函数都会**忽略 NULL**。
+
+例如，统计整张选课表：
+
+```sql
+SELECT COUNT(*) AS enrollment_count,
+       AVG(grade) AS avg_grade,
+       MAX(grade) AS max_grade,
+       STDDEV(grade) AS std_grade
+FROM Enrollment;
+```
+
+----------
+
+#### 6.2 分组：`GROUP BY`
+
+`GROUP BY` 将指定列取值相同的分为一组，再对每个组分别使用聚合函数。
+
+例如，统计每门课程的选课人数和平均成绩：
+
+```sql
+SELECT cid,
+       COUNT(DISTINCT sid) AS enrollment_count,
+       AVG(grade) AS avg_grade
+FROM Enrollment
+GROUP BY cid;
+```
+
+-----
+
+#### 6.3 分组筛选：`HAVING`
+
+`HAVING` 用于对分组后的结果进行过滤，类似于针对组的 `WHERE` 子句。
+
+例如，只显示平均成绩至少 89 分的课程：
+
+```sql
+SELECT cid, AVG(grade) AS avg_grade
+FROM Enrollment
+GROUP BY cid
+HAVING AVG(grade) >= 89;
+```
+
+`WHERE` 与 `HAVING` 的区别：
+
+| 子句     | 筛选对象 | 发生阶段 | 示例               |
+| -------- | -------- | -------- | ------------------ |
+| `WHERE`  | 原始记录 | 分组前   | `grade >= 90`      |
+| `HAVING` | 分组结果 | 分组后   | `AVG(grade) >= 90` |
+
+这两种条件含义不同：
+
+- `WHERE grade >= 90`：先排除低于 90 分的记录，再对剩余记录统计。
+- `HAVING AVG(grade) >= 90`：用组内所有已填写成绩计算平均值，再筛选平均值达标的组。
+
+-----
+
+#### 6.4 查询的逻辑处理顺序
+
+对于本阶段的查询，可以按以下顺序理解：
+
+| 顺序 | 子句            | 作用               |
+| ---- | --------------- | ------------------ |
+| 1    | `FROM` / `JOIN` | 确定来源并连接数据 |
+| 2    | `WHERE`         | 筛选记录           |
+| 3    | `GROUP BY`      | 将记录分组         |
+| 4    | `HAVING`        | 筛选分组           |
+| 5    | `SELECT`        | 形成输出列         |
+| 6    | `DISTINCT`      | 消除重复输出行     |
+| 7    | `ORDER BY`      | 排序               |
+| 8    | `LIMIT` 等      | 限制返回行数       |
+
+例如：
+
+```sql
+SELECT cid,
+       COUNT(*) AS graded_count,
+       AVG(grade) AS avg_grade
+FROM Enrollment
+WHERE grade IS NOT NULL
+GROUP BY cid
+HAVING COUNT(*) >= 2
+ORDER BY avg_grade DESC;
+```
+
+它依次表达：
+
+1. 读取选课表。
+2. 保留已录入成绩的记录。
+3. 按课程分组。
+4. 保留至少有两条已出分记录的课程。
+5. 输出课程编号、已出分人数和平均成绩。
+6. 按平均成绩降序排列。
+
+**逻辑处理顺序解释查询的含义；DBMS 实际执行时可以采用不同的物理计划。**
+
+----------
+
