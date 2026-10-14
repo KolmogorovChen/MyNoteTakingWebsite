@@ -849,3 +849,519 @@ $$
 ----------------
 
 ## 二、SQL
+
+### 1. SQL 背景
+
+SQL（Structured Query Language，结构化查询语言）是关系型数据库中用于**定义数据结构、查询数据和修改数据**的语言。
+
+| 内容     | 解决的问题                 | 例子                 |
+| -------- | -------------------------- | -------------------- |
+| 关系模型 | 数据如何组织？             | 学生表及其属性、主键 |
+| 关系代数 | 如何用逻辑运算表达查询？   | 选择、投影、连接     |
+| SQL      | 如何向 DBMS 提交具体要求？ | 建表、查询、更新     |
+
+---------
+
+SQL 的五大组成部分
+
+| 组成部分        | 英文全称                   | 核心功能                                               |
+| :-------------- | :------------------------- | :----------------------------------------------------- |
+| DDL             | Data-Definition Language   | 数据定义语言，负责定义关系模式、删除关系、修改关系模式 |
+| DML             | Data Manipulation Language | 数据操纵语言，负责查询数据、插入/删除/修改元组         |
+| DCL             | Data Control Language      | 数据控制语言（授权），负责指定对关系和视图的访问权限   |
+| 事务控制        | Transaction Control        | 负责指定事务的开始和结束                               |
+| 嵌入式/动态 SQL | Embedded/Dynamic SQL       | 定义如何将 SQL 语句嵌入通用编程语言中使用              |
+
+> **SQL is based on bag (duplicates) not sets (no duplicates)**
+
+------
+
+### 2. 数据定义语言（DDL）
+
+DDL（Data Definition Language，数据定义语言）用于定义数据库对象的结构。
+
+- **数据库对象**：不是表里的数据，而是数据库里的“容器和规则”，比如数据库、表、视图、索引、约束等。
+- **结构**：指表有哪些列、每列是什么类型、主键是谁、外键怎么关联、索引建在哪一列等。
+
+**DDL 主要命令**
+
+| 命令     | 作用                   | 例子                           |
+| -------- | ---------------------- | ------------------------------ |
+| CREATE   | 创建对象               | `CREATE TABLE`、`CREATE INDEX` |
+| ALTER    | 修改对象结构           | `ALTER TABLE ADD COLUMN`       |
+| DROP     | 删除对象               | `DROP TABLE`                   |
+| TRUNCATE | 清空表数据但保留表结构 | `TRUNCATE TABLE`               |
+| RENAME   | 重命名对象             | `RENAME TABLE`                 |
+
+**常见数据类型**
+
+| 类型            | 含义                                   | 适用例子       |
+| --------------- | -------------------------------------- | -------------- |
+| `INTEGER`       | 整数                                   | 课程学分、人数 |
+| `DECIMAL(p, s)` | 精确十进制数，总位数为 p，小数位数为 s | 成绩、金额     |
+| `CHAR(n)`       | 定长字符串                             | 固定长度的编码 |
+| `VARCHAR(n)`    | 有最大长度限制的变长字符串             | 姓名、课程名称 |
+| `DATE`          | 日期                                   | 出生日期       |
+
+#### 2.1 创建表：`CREATE TABLE`
+
+**基本结构**，沿用学生、课程和选课三张表：
+
+```sql
+CREATE TABLE Student(               # 表名
+    sid   VARCHAR(10) PRIMARY KEY,  # 列名 数据类型 列级约束
+    name  VARCHAR(50) NOT NULL,
+    major VARCHAR(100)
+)  
+CREATE TABLE Course(
+    cid    VARCHAR(10) PRIMARY KEY,
+    title  VARCHAR(50) NOT NULL,
+    credit INTEGER NOT NULL CHECK(credit>0)
+)
+CREATE TABLE Entrollment(
+    sid   VARCHAR(10),
+    cid   VARCHAR(10),
+    grade DECIMAL(5,2),
+    
+    PRIMARY KEY (sid, cid),
+    FOREIGN KEY (sid) REFERENCES Student(sid),
+    FOREIGN KEY (cid) REFERENCES Course(cid),
+    CHECK (grade BETWEEN 0 AND 100)
+)
+```
+
+建表成功只意味着结构存在，此时表中还没有学生记录。
+
+----------
+
+#### 2.2 修改表结构：`ALTER TABLE`
+
+`ALTER TABLE` 用于对**已存在的表**进行结构上的调整，包括：
+
+- **添加列**（ADD）
+- **删除列**（DROP COLUMN）
+- **修改列的类型或约束**（MODIFY / ALTER COLUMN，语法因数据库而异）
+
+```sql
+ALTER TABLE Student
+    ADD COLUMN email VARCHAR(50);
+   
+ALTER TABLE Course
+    DROP COLUMN credit;
+```
+
+#### 2.3 删除表：`DROP TABLE`
+
+```sql
+DROP TABLE Enrollment;
+```
+
+它删除的是**整张表的定义及其数据**。与删除记录对比：
+
+| 语句                      | 作用             | 表结构是否保留 |
+| ------------------------- | ---------------- | -------------- |
+| `DELETE FROM Enrollment;` | 删除表内所有记录 | 保留           |
+| `DROP TABLE Enrollment;`  | 删除整张表       | 不保留         |
+
+------------------
+
+#### 2.4 主要完整性约束（Integrity Constraints）
+
+- **定义**：IC 是关于数据库所有可能实例的陈述，用于防止因授权更改导致的数据一致性丢失，防止对数据库的意外损坏。
+- **来源**：源于现实世界应用的需求（如：学生姓名不能为空、ID不能重复）。
+- **特性**：我们可以通过检查数据库实例来发现是否**违反**了 IC，但永远无法仅通过观察实例来**推断** IC 为真（因为实例只是数据的一个子集）。
+
+**五种主要约束类型**
+
+在 `CREATE TABLE` 命令中常用的约束如下：
+
+| 约束类型        | 说明             | 关键点                                             |
+| :-------------- | :--------------- | :------------------------------------------------- |
+| **NOT NULL**    | 不允许空值       | 属性必须有值。                                     |
+| **PRIMARY KEY** | 主键             | 唯一标识元组，**隐含 NOT NULL**（值不能为空）。    |
+| **UNIQUE**      | 唯一键（候选键） | 属性值必须唯一，但**允许为空**（NULL）。           |
+| **FOREIGN KEY** | 外键             | 引用另一个关系的主键，维护表与表之间的联系。       |
+| **CHECK**       | 检查约束         | 指定属性值必须满足的谓词条件（如 `credits > 0`）。 |
+
+----------
+
+##### （1）主键（Primary Key）与候选键（Candidate Key）
+
+**候选键**：能唯一标识元组的最小属性集。可以有多个候选键。
+
+**主键**：从所有候选键中选出一个作为主键。主键的值不能重复，也不能为 NULL。
+
+**唯一键（Unique Key）**：除了主键之外的其他候选键，用 `UNIQUE` 声明。
+
+```sql
+CREATE TABLE Student(
+    sid   VARCHAR(10) PRIMARY KEY,    -- 主键，自动 NOT NULL
+    name  VARCHAR(50) NOT NULL,
+    major VARCHAR(100),
+    email VARCHAR(15) NOT NULL,
+    
+    UNIQUE (email)                    -- 候选键，值必须唯一
+) 
+```
+
+**为什么要选出一个主键？**
+
+- 保证每行有唯一、明确的身份
+
+  主键是表中最核心的标识符。它要求**唯一且不能为 NULL**，所以每一行都能被准确定位。
+
+- 外键需要稳定、明确的引用目标
+
+  外键通常引用另外一个表的主键。比如：
+
+  ```sql
+  FOREIGN KEY (sid) REFERENCES Student(sid)
+  ```
+
+  如果 `Student`没有一个清晰的主键，其他表就不知道该引用哪一个属性来建立关系
+
+- 主键通常决定数据的物理存储方式
+
+  在 MySQL 的 InnoDB 引擎中，主键默认会成为**聚簇索引**，表中的数据会**按主键顺序组织存储**。这样通过主键查询会非常快。
+
+------------
+
+##### （2）外键（Foreign Key）
+
+外键用于建立**表与表之间的引用关系**。
+
+在表 `Enrollment` 中，`sid` 必须是 `Student` 表中已存在的学号，否则插入会被**拒绝**
+
+```sql
+FOREIGN KEY (sid) REFERENCES Student(sid)
+```
+
+这保证了**参照完整性**：不会出现"选课记录中的学生不存在"的情况
+
+**外键的级联操作（Cascade Actions）**
+
+当被引用的主键记录被**删除**或**更新**时，数据库可以采取以下策略：
+
+删除时（ON DELETE）：
+
+| 策略                | 行为                                             |
+| ------------------- | ------------------------------------------------ |
+| `NO ACTION`（默认） | 如果有关联的外键记录，则**禁止删除**主表记录     |
+| `CASCADE`           | 删除主表记录时，**同时删除**所有引用它的外键记录 |
+| `SET DEFAULT`       | 将外键字段的值设为默认值                         |
+| `SET NULL`          | 将外键字段的值设为 NULL                          |
+
+> 注意：如果外键字段本身是主键的一部分（如 `Enrollment` 中的 `sid`），则 `SET DEFAULT` 和 `SET NULL` 不适用，因为主键不能为 NULL。
+
+更新时（ON UPDATE）：
+
+| 策略                | 行为                                             |
+| :------------------ | :----------------------------------------------- |
+| `NO ACTION`（默认） | 如果有关联的外键记录，则**禁止更新**主键值       |
+| `CASCADE`           | 更新主表主键时，**同步更新**所有引用它的外键记录 |
+
+对于表 `Enrollment` 的创建，一个更完整的写法：
+
+```sql
+CREATE TABLE Entrollment(
+    sid   VARCHAR(10),
+    cid   VARCHAR(10),
+    grade DECIMAL(5,2),
+    
+    PRIMARY KEY (sid, cid),
+    FOREIGN KEY (sid) REFERENCES Student(sid)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    FOREIGN KEY (cid) REFERENCES Course(cid),
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CHECK (grade BETWEEN 0 AND 100)
+)
+```
+
+----------
+
+##### （3）CHECK
+
+| 类型         | 写在哪               | 能引用几列     | 示例                                |
+| ------------ | -------------------- | -------------- | ----------------------------------- |
+| 属性级 CHECK | 列定义后面           | 只能引用当前列 | `credit INTEGER CHECK (credit > 0)` |
+| 域 CHECK     | `CREATE DOMAIN` 中   | 只能引用当前域 | `CHECK (CourseType IN (...))`       |
+| 元组级 CHECK | 表定义末尾           | 可以引用多列   | `CHECK (major != minor)`            |
+| 命名约束     | 用 `CONSTRAINT 名字` | —              | 方便 `DROP` / `ADD`                 |
+
+```sql
+-- 1. 自定义域（如果数据库支持）
+CREATE DOMAIN CourseType AS VARCHAR(20)
+    CHECK (CourseType IN ('Core', 'Elective', 'General'));
+
+-- 2. 学生表
+CREATE TABLE Student (
+    sid   VARCHAR(10) PRIMARY KEY,
+    name  VARCHAR(50) NOT NULL,
+    major VARCHAR(100)
+);
+
+-- 3. 课程表：属性级 CHECK + 域
+CREATE TABLE Course (
+    cid    VARCHAR(10) PRIMARY KEY,
+    title  VARCHAR(50) NOT NULL,
+    credit INTEGER NOT NULL CHECK(credit>0)
+    type   CourseType
+);
+
+-- 4. 选课表：元组级 CHECK + 命名约束
+CREATE TABLE Enrollment (
+    sid   VARCHAR(10),
+    cid   VARCHAR(10),
+    grade DECIMAL(5,2),
+
+    PRIMARY KEY (sid, cid),
+    FOREIGN KEY (sid) REFERENCES Student(sid)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    FOREIGN KEY (cid) REFERENCES Course(cid)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT Valid_Grade
+        CHECK (grade IS NULL OR (grade BETWEEN 0 AND 100))
+);
+
+ALTER TABLE Enrollment DROP CONSTRAINT Valid_Grade;
+```
+
+------------
+
+### 3. SQL 基本查询
+
+基本查询解决三个问题：**从哪张表取数据、保留哪些行、输出哪些列。**
+
+#### 3.1 查询骨架：`SELECT–FROM–WHERE`
+
+```sql
+SELECT sid, name                # 列名
+FROM Student AS s               # 表名 
+WHERE s.major = 'Statistics';   # 条件
+```
+
+| 子句     | 作用         | 对应关系代数             |
+| -------- | ------------ | ------------------------ |
+| `FROM`   | 指定数据来源 | 笛卡尔积 $\times$        |
+| `WHERE`  | 筛选行       | 选择 $\sigma$            |
+| `SELECT` | 指定输出列   | 投影 $\pi$，但默认不去重 |
+
+可以按“先确定来源，再筛选行，最后取列”理解其含义。这是**逻辑上的理解顺序**，实际执行方式由 DBMS 决定。
+
+---------
+
+#### 3.2 条件筛选、去重与空值
+
+##### （1）SELECT 子句（投影）
+
+查询指定列：
+
+```sql
+SELECT sid, name
+FROM Student;
+```
+
+查询所有列：
+
+```sql
+SELECT *          # * 表示所有列
+FROM Student;
+```
+
+`SELECT` 也可以包含计算表达式。例如，将百分制成绩换算成十分制：
+
+```sql
+SELECT sid, cid, grade / 10.0
+FROM Enrollment;
+```
+
+**查询中的计算只改变输出结果，不修改表内原始成绩。**
+
+--------
+
+##### （2）去重：`DISTINCT`
+
+查询所有专业
+
+```sql
+SELECT DISTINCT major
+FROM Student;
+```
+
+如果查询多列：
+
+```sql
+SELECT DISTINCT sid, cid
+FROM Enrollment;
+```
+
+去重针对的是**所选列的整个组合**，并不分别对每一列去重。
+
+------------
+
+##### （3）条件筛选：`WHERE`
+
+常用条件如下：
+
+| 条件类型   | 写法                      | 含义                    |
+| ---------- | ------------------------- | ----------------------- |
+| 比较       | `grade >= 90`             | 成绩至少 90 分          |
+| 且         | `条件1 AND 条件2`         | 两个条件都满足          |
+| 或         | `条件1 OR 条件2`          | 至少一个条件满足        |
+| 非         | `NOT 条件`                | 对条件取否定            |
+| 范围       | `grade BETWEEN 80 AND 90` | 成绩在 80～90，包含端点 |
+| 集合成员   | `cid IN ('C1', 'C2')`     | 课程编号是 C1 或 C2     |
+| 字符串匹配 | `name LIKE '张%'`         | 姓名以“张”开头          |
+
+`LIKE` 中的两个常用通配符：
+
+| 通配符 | 含义                             | 示例    |
+| ------ | -------------------------------- | ------- |
+| `%`    | 任意长度的字符序列，包括零个字符 | `'张%'` |
+| `_`    | 恰好一个字符                     | `'张_'` |
+
+因此，`'张%'` 匹配所有以“张”开头的姓名；`'张_'` 匹配以“张”开头、总共两个字符的姓名。
+
+----------
+
+##### （4）空值判断：`IS NULL`
+
+假设 `grade` 为 `NULL` 表示成绩尚未录入。
+
+查询尚未录入成绩的记录：
+
+```sql
+SELECT sid, cid
+FROM Enrollment
+WHERE grade IS NULL;
+```
+
+查询已经录入成绩的记录：
+
+```sql
+SELECT sid, cid, grade
+FROM Enrollment
+WHERE grade IS NOT NULL;
+```
+
+**不能使用 `grade = NULL` 判断空值。**
+
+----------------
+
+#### 3.3 排序与行数限制
+
+##### （1）排序：`ORDER BY`
+
+查询成绩从高到低排列的已出分记录（成绩相同时，按学号升序；学号也相同时，按课程编号升序。）：
+
+```sql
+SELECT sid, cid, grade
+FROM Enrollment as e
+WHERE grade IS NOT NULL
+ORDER BY grade DESC, sid ASC, cid ASC;
+```
+
+##### （2）行数限制
+
+```sql
+SELECT sid, cid, grade
+FROM Enrollment
+WHERE grade IS NOT NULL
+ORDER BY grade DESC, sid ASC, cid ASC
+LIMIT 3;
+```
+
+--------
+
+### 4. 连接与集合运算
+
+这两类操作都用于组合数据，但组合方式不同：
+
+| 操作         | 组合方式                                 | 示例                         |
+| ------------ | ---------------------------------------- | ---------------------------- |
+| 连接（JOIN） | 根据条件匹配两侧记录，将信息组合到同一行 | 将学生姓名与选课记录关联     |
+| 集合运算     | 将列结构相容的两个查询结果求并、交或差   | 找出同时选修 C1 和 C2 的学生 |
+
+#### 4.1 内连接、外连接与自然连接
+
+##### （1）笛卡尔积（Cartesian Product）
+
+`FROM` 子句中写多张表，默认做笛卡尔积（×），即**所有行的两两组合**。
+
+```sql
+SELECT *
+FROM Student, Course;
+
+# 等价于
+SELECT *
+FROM Student CROSS JOIN Course;
+```
+
+##### （2）自然连接（Natural Join）
+
+自然连接使用两张表的**所有同名列**作为等值匹配条件，并**去除重复列**。
+
+```sql
+SELECT s.name, c.title, e.grade
+FROM Student AS s
+NATURAL JOIN Enrollment AS e NATURAL JOIN Course AS c;
+```
+
+##### （3）内连接（Inner Join）
+
+内连接**只保留匹配成功的组合**；使用 `ON` 指定匹配条件：
+
+```sql
+SELECT s.sid, s.name, e.cid, e.grade
+FROM Student AS s
+INNER JOIN Enrollment AS e
+    ON s.sid = e.sid
+```
+
+含义是：将每条选课记录与学号相同的学生记录组合。
+
+关系代数中：
+
+$$
+R\bowtie_\theta S=\sigma_\theta(R\times S).
+$$
+
+逻辑上相当于从所有组合中筛选匹配项；实际执行时，DBMS 不必先生成完整的笛卡尔积。
+
+`INNER JOIN` 通常可以简写为 `JOIN`。忘记关联条件或写错条件，可能产生大量不符合预期的组合。
+
+##### （4）外连接（Outer Join）
+
+外连接**保留没有匹配的记录**，没有匹配项时，右表对应的列用 `NULL` 填充。：
+
+```sql
+SELECT s.sid, s.name, e.cid, e.grade
+FROM Student AS s
+LEFT JOIN Enrollment AS e
+    ON s.sid = e.sid
+```
+
+| 类型              | 保留哪些记录                         |
+| ----------------- | ------------------------------------ |
+| `INNER JOIN`      | 两侧匹配成功的组合                   |
+| `LEFT JOIN`       | 匹配组合，以及左表没有匹配的记录     |
+| `RIGHT JOIN`      | 匹配组合，以及右表没有匹配的记录     |
+| `FULL OUTER JOIN` | 匹配组合，以及两侧各自没有匹配的记录 |
+
+外连接中，`ON` 与 `WHERE` 的位置会影响结果：
+
+```sql
+SELECT s.sid, s.name, e.cid, e.grade
+FROM Student AS s
+LEFT JOIN Enrollment AS e
+    ON s.sid = e.sid
+WHERE e.grade >= 90;
+```
+
+先形成左连接结果，再筛选成绩。未匹配行的成绩为 `NULL`，无法通过筛选，因此会被删除。
+
+---------
