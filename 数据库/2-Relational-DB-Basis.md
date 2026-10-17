@@ -1,3 +1,5 @@
+# 2-Relational DB Basis & SQL
+
 ## 一、 Relational Model and Relational Algebra
 
 **关系模型（Relational Model）：数据怎样组织、应满足什么规则**
@@ -1775,3 +1777,313 @@ WHERE t.avg_grade >= 89;
 派生表只是查询中的结果来源，**不会创建一张永久保存的数据库表**。
 
 ----------
+
+### 8. 数据修改
+
+数据修改直接改变**表中的记录**，主要包括：
+
+| 操作 | SQL 语句 | 作用               |
+| ---- | -------- | ------------------ |
+| 插入 | `INSERT` | 增加记录           |
+| 更新 | `UPDATE` | 修改已有记录的列值 |
+| 删除 | `DELETE` | 移除记录           |
+
+这些操作必须遵守表上定义的主键、外键、非空及检查约束。
+
+#### 8.1 插入：`INSERT`
+
+基本语法：
+
+```sql
+INSERT INTO 表名 (列1, 列2, ...)
+VALUES (值1, 值2, ...);
+```
+
+**（1）插入一条或多条记录**
+
+例如，插入一名学生：
+
+```sql
+INSERT INTO Student(sid, name, major)
+VALUES 
+    ('S5', 'Jack', 'Statistics'),
+    ('S9', 'Mary', 'Computer Science');
+```
+
+**（2）省略部分列**
+
+如果学生的专业尚未确定，可以只提供学号与姓名：
+
+```sql
+INSERT INTO Student(sid, name)
+VALUES ('S5', 'Jack');
+```
+
+对于省略的列：
+
+- 有默认值时，使用默认值。
+- 没有默认值且允许为空时，通常写入 `NULL`。
+- 如果必须非空且没有可用默认值，则插入失败。
+
+**（3）插入查询结果**
+
+`INSERT ... SELECT` 可以把查询返回的多行写入目标表：
+
+```sql
+INSERT INTO StatisticsStudent(sid, name)
+SELECT sid, name
+FROM Student
+WHERE major='Statistics';
+```
+
+这里假设目标表 `StatisticsStudent` 已存在，且相应列的类型兼容。
+
+------------
+
+#### 8.2 更新：`UPDATE`
+
+基本语法：
+
+```sql
+UPDATE 表名
+SET 列1 = 表达式1,
+    列2 = 表达式2
+WHERE 条件;
+```
+
+例如，将 S1 的 C1 成绩改为 95：
+
+```sql
+UPDATE Enrollment
+SET grade = 95
+WHERE sid = 'S1'
+  AND cid = 'C1';
+```
+
+`WHERE` 确定修改哪些行，`SET` 确定如何修改。
+
+也可以根据原值计算新值。例如，将 C1 中低于 60 分的已录入成绩增加 5 分：
+
+```sql
+UPDATE Enrollment
+SET grade = grade + 5
+WHERE cid = 'C1'
+  AND grade < 60;
+```
+
+需要注意：
+
+- **所有满足条件的行都会被修改**，不只修改第一行。
+- 省略 `WHERE`，表示更新整张表。
+- `NULL + 5` 仍是 `NULL`；需要补录成绩时，应明确赋值。
+- 新值仍须满足约束，例如成绩不能超过允许范围。
+
+-------------
+
+#### 8.3 删除：`DELETE`
+
+基本语法：
+
+```sql
+DELETE FROM 表名
+WHERE 条件;
+```
+
+例如，删除 S1 对 C2 的选课记录：
+
+```sql
+DELETE FROM Enrollment
+WHERE sid = 'S1'
+  AND cid = 'C2';
+```
+
+省略 `WHERE` 会删除表中的所有记录：
+
+```sql
+DELETE FROM Enrollment;
+```
+
+但表结构仍然存在，可以继续插入数据。
+
+| 需求               | 写法                          |
+| ------------------ | ----------------------------- |
+| 清空某条记录的成绩 | `UPDATE ... SET grade = NULL` |
+| 删除某条记录       | `DELETE ... WHERE ...`        |
+| 删除表内所有记录   | `DELETE FROM 表名`            |
+| 删除表结构及数据   | `DROP TABLE 表名`             |
+
+----------------
+
+#### 8.4 修改操作与约束的关系
+
+DBMS 会检查数据修改是否符合已定义的规则：
+
+| 修改行为                   | 可能违反的约束 |
+| -------------------------- | -------------- |
+| 插入已经存在的学号         | 主键约束       |
+| 插入没有姓名的学生         | `NOT NULL`     |
+| 将成绩更新为 120           | `CHECK`        |
+| 为不存在的学生插入选课记录 | 外键约束       |
+
+删除被引用的记录时，也要考虑外键。
+
+例如，S1 仍有选课记录，直接删除学生 S1 时，数据库通常会阻止操作，除非外键配置了相应处理策略：
+
+| 外键策略                 | 删除被引用记录时的处理                   |
+| ------------------------ | ---------------------------------------- |
+| `NO ACTION` / `RESTRICT` | 存在引用时通常阻止删除，检查时机可能不同 |
+| `CASCADE`                | 同时删除引用它的记录                     |
+| `SET NULL`               | 将引用列设为 `NULL`，前提是该列允许为空  |
+
+执行 `UPDATE` 或 `DELETE` 前，可以先用**相同的 `WHERE` 条件执行 `SELECT`**，核对将受影响的记录：
+
+```sql
+SELECT *
+FROM Enrollment
+WHERE sid = 'S1'
+  AND cid = 'C2';
+```
+
+-----
+
+### 9. 视图
+
+#### 9.1 视图的定义与用途
+
+视图（View）是**由查询定义的虚拟表**。可以像查询普通表一样查询它。
+
+普通视图主要保存的是 **SQL 查询定义**，不单独保存一份查询结果。查询视图时，DBMS 根据其定义访问底层表。
+
+例如，将“统计学专业学生”定义成一个视图，以后就可以通过视图名称查询，无需每次重复筛选条件。
+
+视图的主要用途：
+
+| 用途               | 说明                                 |
+| ------------------ | ------------------------------------ |
+| 简化查询           | 将常用筛选、连接或聚合封装成一个名称 |
+| 提供不同的数据展示 | 不同用户或应用使用不同的行、列组合   |
+| 控制数据访问       | 配合权限设置，只开放指定数据         |
+
+视图可以隐藏部分列，但要真正限制访问，还需要设置权限，避免用户直接访问底层表。
+
+-----------
+
+#### 9.2 创建、查询与删除视图
+
+**（1）创建视图：`CREATE VIEW`**
+
+基本语法：
+
+```sql
+CREATE VIEW 视图名 [(列名1, 列名2, ...)]
+AS
+SELECT 查询语句
+FROM 表
+[WHERE 条件]
+[GROUP BY 分组]
+[HAVING 分组筛选]
+[ORDER BY 排序];
+```
+
+例如，将“统计学专业学生”定义成一个视图
+
+```sql
+CREATE VIEW StatisticsStudentView AS 
+SELECT sid, name
+FROM Student
+WHERE major = 'Statistics';
+```
+
+这里：
+
+- `Student` 是底层的**基表**。
+- `StatisticsStudentView` 是视图。
+- `AS` 后面的查询定义视图包含哪些数据。
+
+创建视图不会把符合条件的学生复制到一张新表中。
+
+视图不存数据，只存一条 SELECT 查询语句；真正的数据仍然放在基表`Student`里，没有复制生成新物理表。
+
+**（2）查询视图**
+
+```sql
+SELECT sid, name
+FROM StatisticsStudentView
+WHERE name like '张%'
+ORDER BY sid;
+```
+
+如果基表中的学生转入或转出 Statistics 专业，后续查询视图时，会根据查询可见的基表数据重新确定结果。
+
+**（3）删除视图：`DROP VIEW`**
+
+```sql
+DROP VIEW StatisticsStudentView;
+```
+
+**删除视图只删除视图定义，不删除基表及其中的数据。**
+
+---------------
+
+### 9.4 视图更新的主要限制
+
+**（1）简单单表视图通常可以更新**
+
+例如，只从一张表中筛选行、选取普通列的视图，通常可以将修改映射回基表。
+
+```
+UPDATE StatisticsStudentView SET name='张三' WHERE sid='001';
+```
+
+数据库自动映射成：
+
+```
+UPDATE Student SET name='张三' WHERE sid='001' AND major='Statistics';
+```
+
+但插入记录时，仍然必须满足基表的主键、非空等约束。视图没有包含的必填列，也需要有可用的默认值或其他取值来源。
+
+**（2）聚合等复杂视图通常不能直接更新**
+
+例如：
+
+```sql
+CREATE VIEW CourseAverage AS
+SELECT cid, AVG(grade) AS avg_grade
+FROM Enrollment
+GROUP BY cid;
+```
+
+如果执行：
+
+```sql
+UPDATE CourseAverage
+SET avg_grade = 90
+WHERE cid = 'C1';
+```
+
+数据库无法仅凭“平均成绩改为 90”确定：应该修改哪些学生的成绩、各改为多少。
+
+常见情况如下：
+
+| 视图内容           | 更新时的问题                           |
+| ------------------ | -------------------------------------- |
+| 聚合、`GROUP BY`   | 一行统计结果对应多条原始记录           |
+| `DISTINCT`         | 一行结果可能合并了多条记录             |
+| `UNION` 等集合运算 | 难以直接确定修改应作用于哪个来源       |
+| 多表连接           | 更新能力取决于记录映射及具体数据库规则 |
+
+**（3）修改后，记录可能不再满足视图条件**
+
+通过统计学学生视图，把某名学生的专业改成 Mathematics 后，该学生可能从视图中消失，但仍存在于 `Student` 表。
+
+创建筛选视图时，可以在查询定义末尾添加：
+
+```sql
+WITH CHECK OPTION
+```
+
+它要求通过视图插入或更新后的记录，**仍然满足视图的筛选条件**。对于本例，就是专业必须仍为 `'Statistics'`。
+
+-----
+

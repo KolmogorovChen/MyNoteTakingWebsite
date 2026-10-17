@@ -1,4 +1,4 @@
-## DBMS
+## 1-DBMS Outline
 
 **数据库管理系统（Database Management System，DBMS）是用于定义、存储、查询、操作和维护数据库的软件系统。**
 
