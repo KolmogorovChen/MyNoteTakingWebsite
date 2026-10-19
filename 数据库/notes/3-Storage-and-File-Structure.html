@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>第 3 讲 · 存储与文件结构 · 课件学习目录</title>
+<style>*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:20px}body{max-width:1100px;margin:32px auto;padding:0 22px;font:17px/1.85 system-ui,sans-serif;color:#243247;background:#f7f9fc}a{color:#175d9c;text-underline-offset:3px}h1{font-size:1.85em;line-height:1.45}header,.overview,section{margin:24px 0;padding:24px 28px;background:#fff;border:1px solid #dce3eb;border-radius:10px}h2{font-size:1.4em;line-height:1.5;margin:0 0 8px;padding-bottom:10px;border-bottom:2px solid #cddcec}h3{font-size:1.1em;line-height:1.6;margin:0 0 6px}.topic{margin:20px 0 24px 22px;padding-left:18px;border-left:3px solid #e0e9f3}.topic p{margin:5px 0}.question{color:#43546a}.meta,.note{font-size:.88em;color:#59677a;overflow-wrap:anywhere}.badge{display:inline-block;padding:1px 9px;margin-right:8px;border-radius:4px;background:#edf2f8;color:#4a5e78;font-size:.8em}.advanced{background:#f2edfb;color:#65438c}.known{background:#e6f4ec;color:#266341}.current{border-color:#e4bd6e;background:#fffaf0}.source{white-space:nowrap}code{font-size:.9em;background:#edf2f7;padding:2px 5px}table{width:100%;border-collapse:collapse;font-size:.94em}th,td{padding:9px;border-bottom:1px solid #dce3eb;text-align:left;vertical-align:top}.table-wrap{overflow-x:auto}nav ol{padding-left:25px}nav li{margin:4px 0}nav ol ol{font-size:.93em}footer{margin:24px 0}.check{padding:12px 16px;background:#f1f5f9;border-radius:5px}@media(max-width:600px){body{padding:0 12px;font-size:16px}header,.overview,section{padding:18px 15px}.topic{margin-left:8px;padding-left:12px}h1{font-size:1.6em}}@media print{body{max-width:none;background:white;margin:0}nav[aria-label="完整目录"]{display:none}h2,h3{break-after:avoid}.topic{break-inside:avoid}}</style></head><body>
+<nav><a href="../progress.html">学习进度</a> · <a href="2-Relational-DB-Basis.html">上一讲</a> · <a href="3-Storage-and-File-Structure.pdf">老师课件（98 页）</a></nav>
+<header><h1>第 3 讲 · 存储与文件结构</h1>
+<p><strong>核心问题：</strong>数据的物理布局怎样影响 I/O、内存访问和 CPU 处理成本？</p>
+<p>当前坐标：第 3 讲〈存储与文件结构〉· 第 1/6 个知识点〈物理存储介质与 RAID〉，接下来学习子项 3〈RAID 的冗余与并行机制〉。</p>
+<p>状态：进行中。完整完成 0/6 个课件模块，多个子项已有笔记。更新时间：2026-10-18。</p>
+<p class="note">依据课件第 3 页的六模块大纲重建。第 1—4 模块为基础部分，第 5—6 模块在课件中标为 Advanced，均保留在本讲学习范围。第 2 页为架构回顾，第 98 页为总结；中间重复的大纲页用于过渡。</p>
+<p class="note">所有页码采用 PDF 物理页码（本课件与页上编号一致），点击页码可定位。页面采用 <code>## 一、主题</code> → <code>### 1. 子知识点</code> 层级；进度按六个模块计数。</p></header>
+<aside class="overview current"><strong>从你已有的笔记继续</strong>
+<p>已读 <a href="../3-Storage and File Structure.md">现有第 3 讲笔记</a>：原目录的存储层次、页、顺序与随机 I/O，以及记录布局已有内容。新的模块“一”包含尚未学的 RAID，模块“三”新增空闲链表、变长记录表示与槽式页，因此不能把这两个模块整章勾为完成。</p>
+<p><strong>下一步：</strong><a href="#storage-io-3">RAID 的冗余与并行机制</a>（第 9—11 页）。先理解“镜像解决什么问题、条带化解决什么问题”，再比较 RAID 级别。</p>
+<p class="note">课件补读：第 4—6 页的 Cache、磁带和延迟对比。已有记录头、NULL 位图与变长字段偏移可继续作为辅助理解；它们不单独替代课件新增条目。原始笔记只读。</p></aside>
+<aside class="overview"><strong>推荐学习路线</strong>
+<p>① 介质与 RAID → ② 缓冲管理 → ③ 记录组织 → ④ 文件组织及 I/O 计算 → ⑤ 列式格式 → ⑥ SIMD 与高级压缩。</p>
+<p>基本依赖：先知道读写页的成本，再理解缓冲池如何减少 I/O；随后看页内记录及文件布局；最后研究分析查询如何通过列式组织、编码和并行处理减少总成本。</p>
+<div class="table-wrap"><table><thead><tr><th>学习段</th><th>课件范围</th><th>完成时应能做什么</th></tr></thead><tbody>
+<tr><td>基础主线：一—四</td><td>第 4—51 页</td><td>解释页访问与布局；完成 Exercise 1—4，并说明成本公式的假设。</td></tr>
+<tr><td>Advanced：五</td><td>第 53—78 页</td><td>画出 NSM/DSM/PAX 与 Parquet 层次，解释编码、跳过数据和嵌套结构恢复。</td></tr>
+<tr><td>Advanced：六</td><td>第 80—97 页</td><td>区分 BtrBlocks、FastLanes、BitWeaving 的优化目标，并跟随示例得到结果掩码。</td></tr>
+</tbody></table></div><p class="note">模块顺序沿用课件；模块六中先合并学习 BitWeaving 两种布局，再回看第 95 页的 Selection Vector。Advanced 是课件的内容分层，不表示可直接略过，也不据此认定考试权重。</p></aside>
+<nav class="overview" aria-label="完整目录"><strong>完整目录（展开至三级标题）</strong><ol>
+<li><a href="#storage-io">一、物理存储介质与 RAID</a><ol>
+<li><a href="#storage-io-1">存储层次与访问延迟</a></li>
+<li><a href="#storage-io-2">HDD 结构与页访问成本</a></li>
+<li><a href="#storage-io-3">RAID 的冗余与并行机制</a></li>
+<li><a href="#storage-io-4">奇偶校验、RAID 级别与嵌套结构</a></li>
+<li><a href="#storage-io-5">RAID 的选择与小写入代价</a></li>
+</ol></li>
+<li><a href="#buffer">二、数据库缓冲管理</a><ol>
+<li><a href="#buffer-1">缓冲、预读与磁盘调度</a></li>
+<li><a href="#buffer-2">为什么 DBMS 自己管理缓冲</a></li>
+<li><a href="#buffer-3">页请求与缓冲池的工作过程</a></li>
+<li><a href="#buffer-4">LRU、MRU 与重复扫描</a></li>
+</ol></li>
+<li><a href="#records">三、记录组织</a><ol>
+<li><a href="#records-1">定长记录与相对位置</a></li>
+<li><a href="#records-2">空闲链表（Free List）</a></li>
+<li><a href="#records-3">变长记录的四类表示方法</a></li>
+<li><a href="#records-4">槽式页（Slotted Page）</a></li>
+</ol></li>
+<li><a href="#files">四、文件组织与 I/O 代价</a><ol>
+<li><a href="#files-1">数据库文件与三种页概念</a></li>
+<li><a href="#files-2">搜索键、阻塞因子与页数</a></li>
+<li><a href="#files-3">堆文件：链表、页目录与空闲空间</a></li>
+<li><a href="#files-4">顺序文件：排序、溢出页与重组</a></li>
+<li><a href="#files-5">哈希文件：桶、装载率与溢出</a></li>
+<li><a href="#files-6">三种文件组织的 I/O 成本比较</a></li>
+<li><a href="#files-7">课件计算练习 Exercise 2—4</a></li>
+</ol></li>
+<li><a href="#columnar">五、面向列的存储格式</a><ol>
+<li><a href="#columnar-1">OLTP、OLAP 与扫描优化</a></li>
+<li><a href="#columnar-2">NSM、DSM 与元组重建</a></li>
+<li><a href="#columnar-3">PAX：行组与列块</a></li>
+<li><a href="#columnar-4">开放格式、文件元数据与 Parquet 布局</a></li>
+<li><a href="#columnar-5">物理类型、逻辑类型与 Parquet/ORC</a></li>
+<li><a href="#columnar-6">值级编码：Dictionary、RLE、Bitpacking、Delta、FOR</a></li>
+<li><a href="#columnar-7">字典压缩与高基数限制</a></li>
+<li><a href="#columnar-8">块压缩与解压成本</a></li>
+<li><a href="#columnar-9">过滤元数据：Zone Map 与 Bloom Filter</a></li>
+<li><a href="#columnar-10">嵌套数据：Shredding 与 Length + Presence</a></li>
+</ol></li>
+<li><a href="#simd">六、面向 SIMD 的高级压缩</a><ol>
+<li><a href="#simd-1">传统编码的执行瓶颈</a></li>
+<li><a href="#simd-2">BtrBlocks：采样与递归编码选择</a></li>
+<li><a href="#simd-3">FSST：支持随机访问的字符串压缩</a></li>
+<li><a href="#simd-4">Roaring Bitmaps：按密度选择容器</a></li>
+<li><a href="#simd-5">FastLanes 与统一转置布局</a></li>
+<li><a href="#simd-6">Bit-Sliced Encoding：过滤与聚合</a></li>
+<li><a href="#simd-7">BitWeaving：水平与垂直布局</a></li>
+<li><a href="#simd-8">Selection Vector 与结果位置</a></li>
+</ol></li>
+</ol></nav><main>
+<section id="storage-io"><h2><input type="checkbox" disabled aria-label="模块未全部完成"> 一、物理存储介质与 RAID</h2>
+<p class="meta"><span class="badge">基础</span>Physical Storage Media Overview · <a class="source" href="3-Storage-and-File-Structure.pdf#page=4">课件第 4—17 页</a></p>
+<p><strong>本主题回答：</strong>数据存在哪里，单盘访问为什么慢，多盘如何兼顾性能与可靠性？</p>
+<div class="topic" id="storage-io-1"><h3>1. 存储层次与访问延迟</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=4">课件第 4—6 页</a></p><p class="question"><strong>要解决的问题：</strong>Cache、RAM、SSD、HDD 和磁带在速度、容量、持久性及用途上有什么区别？</p>
+<p class="note"><span class="badge">部分已学：RAM、HDD、SSD 已有笔记；Cache、磁带与延迟对比待补</span></p></div>
+<div class="topic" id="storage-io-2"><h3>2. HDD 结构与页访问成本</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=7">课件第 7—8 页</a></p><p class="question"><strong>要解决的问题：</strong>盘片、磁道和扇区怎样关联？寻道、旋转等待和传输如何构成页访问成本，为什么顺序 I/O 更快？</p>
+<p class="note"><span class="badge known">已学：现有笔记“一、3”</span></p></div>
+<div class="topic" id="storage-io-3"><h3>3. RAID 的冗余与并行机制</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=9">课件第 9—11 页</a></p><p class="question"><strong>要解决的问题：</strong>多盘为何增加故障风险？镜像如何提供冗余，条带化如何提高吞吐或降低大请求延迟？</p>
+<p class="note"><span class="badge">下一步</span></p></div>
+<div class="topic" id="storage-io-4"><h3>4. 奇偶校验、RAID 级别与嵌套结构</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=12">课件第 12—16 页</a></p><p class="question"><strong>要解决的问题：</strong>XOR 校验如何用于恢复？RAID 0、1、5、6 及课件中的嵌套结构有什么取舍，2、3、4 为何列为过时方案？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="storage-io-5"><h3>5. RAID 的选择与小写入代价</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=17">课件第 17 页</a></p><p class="question"><strong>要解决的问题：</strong>怎样结合容量成本、随机小写入、连续大写入、故障及重建表现选择方案？为什么校验更新会增加读写？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<p class="check"><strong>本模块自检：</strong>画出镜像与条带化示意，解释 RAID 5 小更新涉及的校验读写，并比较正常、故障与重建场景。</p>
+<p class="note">后续单独记录时的计划文件名：<code>notes/3-Storage-and-File-Structure/1-物理存储介质与RAID.html</code>（尚未创建；现有 Markdown 笔记继续有效）</p></section>
+<section id="buffer"><h2><input type="checkbox" disabled aria-label="模块未全部完成"> 二、数据库缓冲管理</h2>
+<p class="meta"><span class="badge">基础</span>Database Buffer Manager · <a class="source" href="3-Storage-and-File-Structure.pdf#page=19">课件第 19—24 页</a></p>
+<p><strong>本主题回答：</strong>如何减少重复读盘，并控制页的加载、替换与写回？</p>
+<div class="topic" id="buffer-1"><h3>1. 缓冲、预读与磁盘调度</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=19">课件第 19—20 页</a></p><p class="question"><strong>要解决的问题：</strong>缓冲、预读和电梯调度分别减少什么开销？为什么应用处理数据前需要先将它读入 RAM？</p>
+<p class="note"><span class="badge">部分已学：缓冲与预读已涉及；磁盘调度待补</span></p></div>
+<div class="topic" id="buffer-2"><h3>2. 为什么 DBMS 自己管理缓冲</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=21">课件第 21—22 页</a></p><p class="question"><strong>要解决的问题：</strong>只依赖 mmap 和操作系统换页会遇到什么事务安全、I/O 停顿及性能问题？DBMS 希望控制哪些行为？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="buffer-3"><h3>3. 页请求与缓冲池的工作过程</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=23">课件第 23 页</a></p><p class="question"><strong>要解决的问题：</strong>请求页时怎样检查缓冲池、读入所需页并在缓冲已满时选择替换页？</p>
+<p class="note"><span class="badge">部分已学：已有笔记“一、2”；按课件图串联过程</span></p></div>
+<div class="topic" id="buffer-4"><h3>4. LRU、MRU 与重复扫描</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=24">课件第 24 页</a></p><p class="question"><strong>要解决的问题：</strong>为什么 LRU 不总适合数据库？在课件的嵌套循环与重复扫描情形下，MRU 为什么可能更合适？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<p class="check"><strong>本模块自检：</strong>沿第 23 页画出一次命中和一次未命中的请求过程；用第 24 页的重复扫描说明 LRU 与 MRU 的差异。</p>
+<p class="note">后续单独记录时的计划文件名：<code>notes/3-Storage-and-File-Structure/2-数据库缓冲管理.html</code>（尚未创建；现有 Markdown 笔记继续有效）</p></section>
+<section id="records"><h2><input type="checkbox" disabled aria-label="模块未全部完成"> 三、记录组织</h2>
+<p class="meta"><span class="badge">基础</span>Record Organization · <a class="source" href="3-Storage-and-File-Structure.pdf#page=26">课件第 26—33 页</a></p>
+<p><strong>本主题回答：</strong>字段如何组成记录，记录增删或移动后如何继续管理空间和引用？</p>
+<div class="topic" id="records-1"><h3>1. 定长记录与相对位置</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=26">课件第 26—27 页</a></p><p class="question"><strong>要解决的问题：</strong>如何由记录长度计算位置？记录不跨页有什么空间代价，删除后直接移动记录会怎样影响物理引用？</p>
+<p class="note"><span class="badge">部分已学：定长记录与偏移已掌握；跨页约束和移动影响待补</span></p></div>
+<div class="topic" id="records-2"><h3>2. 空闲链表（Free List）</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=28">课件第 28 页</a></p><p class="question"><strong>要解决的问题：</strong>如何利用已删除记录的空间保存下一空闲位置，复用槽位而不移动有效记录？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="records-3"><h3>3. 变长记录的四类表示方法</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=29">课件第 29—32 页</a></p><p class="question"><strong>要解决的问题：</strong>字节串、嵌入标识、预留空间和指针方法分别怎样表示记录？碎片、浪费空间、锚页及溢出页有哪些取舍？</p>
+<p class="note"><span class="badge">部分已学：变长字段与元数据已有笔记；课件四类表示待补</span></p></div>
+<div class="topic" id="records-4"><h3>4. 槽式页（Slotted Page）</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=33">课件第 33 页</a></p><p class="question"><strong>要解决的问题：</strong>页头如何记录条目数、空闲区边界及记录位置和长度？通过槽条目间接引用，为什么允许页内整理记录？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<p class="check"><strong>本模块自检：</strong>画出空闲链表和槽式页；模拟一次删除、一次插入及一次页内移动，指出哪些管理信息发生改变。</p>
+<p class="note">后续单独记录时的计划文件名：<code>notes/3-Storage-and-File-Structure/3-记录组织.html</code>（尚未创建；现有 Markdown 笔记继续有效）</p></section>
+<section id="files"><h2><input type="checkbox" disabled aria-label="模块未全部完成"> 四、文件组织与 I/O 代价</h2>
+<p class="meta"><span class="badge">基础</span>File Organizations · <a class="source" href="3-Storage-and-File-Structure.pdf#page=35">课件第 35—51 页</a></p>
+<p><strong>本主题回答：</strong>不同文件布局如何影响定位、扫描、插入、删除和页 I/O 次数？</p>
+<div class="topic" id="files-1"><h3>1. 数据库文件与三种页概念</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=35">课件第 35—36 页</a></p><p class="question"><strong>要解决的问题：</strong>存储管理器怎样以页组织文件？设备层、操作系统和数据库各自的页概念为什么要区分？</p>
+<p class="note"><span class="badge">部分已学：已有记录、数据库页及设备块的区分；按课件补齐</span></p></div>
+<div class="topic" id="files-2"><h3>2. 搜索键、阻塞因子与页数</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=37">课件第 37—38 页</a></p><p class="question"><strong>要解决的问题：</strong>搜索键为什么不一定唯一？在不跨页的简化模型下，怎样计算每页记录数和总页数，并完成 Exercise 1？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="files-3"><h3>3. 堆文件：链表、页目录与空闲空间</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=39">课件第 39—41 页</a></p><p class="question"><strong>要解决的问题：</strong>记录无序放置时怎样跟踪文件中的页与空闲空间？链表和页目录怎样帮助寻找插入位置？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="files-4"><h3>4. 顺序文件：排序、溢出页与重组</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=42">课件第 42—43 页</a></p><p class="question"><strong>要解决的问题：</strong>按搜索键排序如何帮助检索？插入和删除如何使用指针链与溢出页，为什么要定期重组？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="files-5"><h3>5. 哈希文件：桶、装载率与溢出</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=44">课件第 44—46 页</a></p><p class="question"><strong>要解决的问题：</strong>哈希函数怎样将搜索键映射到桶？为什么适合等值查询，80% 占用率与溢出页如何影响空间和访问？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="files-6"><h3>6. 三种文件组织的 I/O 成本比较</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=47">课件第 47—48 页</a></p><p class="question"><strong>要解决的问题：</strong>在课件的简化假设下，如何推导扫描、等值、范围、插入和删除的成本？为什么哈希扫描出现 1.25B？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="files-7"><h3>7. 课件计算练习 Exercise 2—4</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=49">课件第 49—51 页</a></p><p class="question"><strong>要解决的问题：</strong>能否根据记录大小、搜索字段和文件组织算出页数与查找代价，并识别搜索字段不是排序键的情况？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<p class="check"><strong>本模块自检：</strong>完成 Exercise 1—4；比较文件组织时逐项写出第 47—48 页的假设，避免把平均值与理想成本当成普遍保证。</p>
+<p class="note">后续单独记录时的计划文件名：<code>notes/3-Storage-and-File-Structure/4-文件组织与IO代价.html</code>（尚未创建；现有 Markdown 笔记继续有效）</p></section>
+<section id="columnar"><h2><input type="checkbox" disabled aria-label="模块未全部完成"> 五、面向列的存储格式</h2>
+<p class="meta"><span class="badge advanced">Advanced</span>Column-Oriented Storage Formats · <a class="source" href="3-Storage-and-File-Structure.pdf#page=53">课件第 53—78 页</a></p>
+<p><strong>本主题回答：</strong>分析查询为何采用列式组织，文件怎样结合布局、元数据、编码与嵌套数据表示？</p>
+<div class="topic" id="columnar-1"><h3>1. OLTP、OLAP 与扫描优化</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=53">课件第 53—54 页</a></p><p class="question"><strong>要解决的问题：</strong>点查与频繁更新、大范围扫描与少列聚合分别需要怎样的布局？预读、延迟物化、跳过数据和向量化各在优化什么？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="columnar-2"><h3>2. NSM、DSM 与元组重建</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=55">课件第 55—58 页</a></p><p class="question"><strong>要解决的问题：</strong>按行或按列连续存储有什么局部性差异？列存怎样用固定偏移或元组 ID 将不同列重新组合为同一行？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="columnar-3"><h3>3. PAX：行组与列块</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=59">课件第 59—60 页</a></p><p class="question"><strong>要解决的问题：</strong>如何先按行分组，再在组内按列组织？为什么这种布局兼顾列式读取与元组数据的空间邻近性？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="columnar-4"><h3>4. 开放格式、文件元数据与 Parquet 布局</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=61">课件第 61—65 页</a></p><p class="question"><strong>要解决的问题：</strong>文件怎样做到与查询引擎解耦、自描述？Schema、行组偏移、统计信息、列块、数据页与 Footer 怎样配合？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="columnar-5"><h3>5. 物理类型、逻辑类型与 Parquet/ORC</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=66">课件第 66—67 页</a></p><p class="question"><strong>要解决的问题：</strong>字节表示与逻辑解释有什么区别？精简物理类型加逻辑注解、较丰富类型系统各给读写端带来什么取舍？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="columnar-6"><h3>6. 值级编码：Dictionary、RLE、Bitpacking、Delta、FOR</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=68">课件第 68 页</a></p><p class="question"><strong>要解决的问题：</strong>重复值、连续重复、小整数、有序差分和基准附近的数值分别适合什么编码？为什么可以叠加编码？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="columnar-7"><h3>7. 字典压缩与高基数限制</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=69">课件第 69—70 页</a></p><p class="question"><strong>要解决的问题：</strong>字典与编码列怎样配合？字典排序有什么作用，NDV 太高时为什么可能失去空间收益？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="columnar-8"><h3>8. 块压缩与解压成本</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=71">课件第 71—72 页</a></p><p class="question"><strong>要解决的问题：</strong>值级编码与通用字节块压缩有什么区别？如何按第 71 页比较压缩率与编解码成本，并用第 72 页识别算法分类？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="columnar-9"><h3>9. 过滤元数据：Zone Map 与 Bloom Filter</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=73">课件第 73 页</a></p><p class="question"><strong>要解决的问题：</strong>如何在加载和解压前跳过不相关的行组？min/max 与概率过滤各能排除哪些数据，误报意味着什么？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="columnar-10"><h3>10. 嵌套数据：Shredding 与 Length + Presence</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=74">课件第 74—78 页</a></p><p class="question"><strong>要解决的问题：</strong>怎样按叶路径保存对象、缺失字段和重复数组？如何用 definition/repetition levels 或长度与存在性信息恢复层级关系？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<p class="check"><strong>本模块自检：</strong>画出文件 → 行组 → 列块 → 数据页与元数据的关系；手算一组简单编码，并按第 75—78 页解释嵌套数据的恢复。</p>
+<p class="note">后续单独记录时的计划文件名：<code>notes/3-Storage-and-File-Structure/5-面向列的存储格式.html</code>（尚未创建；现有 Markdown 笔记继续有效）</p></section>
+<section id="simd"><h2><input type="checkbox" disabled aria-label="模块未全部完成"> 六、面向 SIMD 的高级压缩</h2>
+<p class="meta"><span class="badge advanced">Advanced</span>SIMD-Optimized Advanced Compression · <a class="source" href="3-Storage-and-File-Structure.pdf#page=80">课件第 80—97 页</a></p>
+<p><strong>本主题回答：</strong>怎样让压缩表示更适合并行解码，并直接支持过滤和聚合？</p>
+<div class="topic" id="simd-1"><h3>1. 传统编码的执行瓶颈</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=80">课件第 80 页</a></p><p class="question"><strong>要解决的问题：</strong>变长运行段、相邻值依赖和提前解压怎样限制并行处理？为什么最小文件不一定带来最快查询？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="simd-2"><h3>2. BtrBlocks：采样与递归编码选择</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=81">课件第 81—82 页</a></p><p class="question"><strong>要解决的问题：</strong>如何通过抽样选择并叠加编码？为什么要兼顾数据特征、压缩收益和解码成本？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="simd-3"><h3>3. FSST：支持随机访问的字符串压缩</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=83">课件第 83 页</a></p><p class="question"><strong>要解决的问题：</strong>频繁子串如何映射为短码？为什么不必解压前面的全部字符串就能访问目标条目？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="simd-4"><h3>4. Roaring Bitmaps：按密度选择容器</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=84">课件第 84 页</a></p><p class="question"><strong>要解决的问题：</strong>如何分块表示整数集合，并在稀疏数组、位图和运行段之间选择？为什么适合表示 NULL 或异常位置？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="simd-5"><h3>5. FastLanes 与统一转置布局</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=85">课件第 85—88 页</a></p><p class="question"><strong>要解决的问题：</strong>固定批次和重排怎样减少跨值依赖与分支？能否沿课件图解释多个执行通道如何独立工作？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="simd-6"><h3>6. Bit-Sliced Encoding：过滤与聚合</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=89">课件第 89—91 页</a></p><p class="question"><strong>要解决的问题：</strong>按位平面组织数值为什么能提前结束比较？如何用每个位平面的置位数和对应位权计算总和？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="simd-7"><h3>7. BitWeaving：水平与垂直布局</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=92">课件第 92—97 页</a></p><p class="question"><strong>要解决的问题：</strong>如何在压缩数据上用机器字位运算批量判断谓词？水平分隔位布局与垂直位平面布局有什么区别？重点读第 92—94、96—97 页。</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<div class="topic" id="simd-8"><h3>8. Selection Vector 与结果位置</h3>
+<p class="meta"><a class="source" href="3-Storage-and-File-Structure.pdf#page=95">课件第 95 页</a></p><p class="question"><strong>要解决的问题：</strong>位掩码如何标记满足谓词的元组？逐位遍历与预计算位置表怎样把掩码转为后续算子需要的位置列表？</p>
+<p class="note"><span class="badge">待学</span></p></div>
+<p class="check"><strong>本模块自检：</strong>说明压缩率、并行解码和直接过滤的区别；沿第 88、90、94、97 页的小例子跟踪布局、位运算和输出掩码。</p>
+<p class="note">后续单独记录时的计划文件名：<code>notes/3-Storage-and-File-Structure/6-面向SIMD的高级压缩.html</code>（尚未创建；现有 Markdown 笔记继续有效）</p></section>
+</main><footer><strong>本讲总结与阶段检验</strong>
+<p>学完后回到 <a href="3-Storage-and-File-Structure.pdf#page=98">课件第 98 页</a>：依据工作负载比较 I/O、内存流量、解码与元组重建成本，解释为什么压缩更小不一定查询更快。</p>
+<p>下一讲为第 4 讲〈索引〉。目前不触发第一阶段达标检验；完成本讲和索引后，再解释一次按用户编号查订单的查询如何从 SQL 落到页访问。</p>
+<p class="note">课件中的设备参数、默认配置与性能数字作为本次授课示例理解；目录主要提取概念、结构和推理问题。</p></footer></body></html>
