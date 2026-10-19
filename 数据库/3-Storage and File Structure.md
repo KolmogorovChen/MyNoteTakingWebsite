@@ -142,7 +142,7 @@ Cache 通常以**缓存行（cache line）**为单位搬运数据：它一般不
 
 #### （1）HDD 结构
 
-<img src="figures\HDD.png" alt="HDD" style="zoom:30%;" />
+<img src="figures/HDD.png" alt="HDD" style="zoom:30%;" />
 
 机械硬盘中有旋转的**盘片（platter）**，读写头通过机械臂移动到对应位置：
 
@@ -299,7 +299,7 @@ $$
 B=P\oplus A\oplus C=1100
 $$
 
-<img src="figures\XOR.png" alt="XOR" style="zoom:50%;" />
+<img src="figures/XOR.png" alt="XOR" style="zoom:50%;" />
 
 因为 A 和 C 在异或运算中分别出现两次，互相抵消，留下 B。
 
@@ -321,7 +321,7 @@ $$
 
 **RAID 0** 虽然名称中有 RAID，但没有冗余。一块盘坏掉，分布在它上面的数据就可能无法恢复。
 
-<img src="figures\RAID0.png" alt="RAID0" style="zoom: 18%;" />
+<img src="figures/RAID0.png" alt="RAID0" style="zoom: 18%;" />
 
 **RAID 5** 的“分布式校验”可以画成（$N = 4, S = 3$）：
 
@@ -333,7 +333,7 @@ $$
 
 每一组都有校验块，但校验位置轮换，**没有一块磁盘始终专门负责全部校验**。这样可以分散校验写入的负载。
 
-<img src="E:\科广第一学期\5012 Advanced Database Management for Data Science\我的笔记\figures\RAID5&6.png" alt="RAID5&6" style="zoom: 20%;" />
+<img src="figures/RAID5&6.png" alt="RAID5&6" style="zoom: 20%;" />
 
 **RAID 6** 使用两份独立的校验信息，通常称为 P 和 Q。这里 Q 使用另一种编码关系（这里就先不介绍）。它们需要提供不同的恢复信息，不能只是把同一个 XOR 校验复制两遍。
 
@@ -345,7 +345,7 @@ $$
 
 接下来看**嵌套RAID**
 
-<img src="figures\RAID_01&10.png" alt="RAID_01&10" style="zoom:33%;" />
+<img src="figures/RAID_01&10.png" alt="RAID_01&10" style="zoom:33%;" />
 
 | 对比点     | RAID 0+1                       | RAID 1+0                 |
 | ---------- | ------------------------------ | ------------------------ |
