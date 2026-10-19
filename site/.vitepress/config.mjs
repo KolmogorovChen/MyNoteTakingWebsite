@@ -2,6 +2,8 @@ import { defineConfig } from 'vitepress';
 import fs from 'node:fs';
 import { groupTopics, topicItems } from './topics.mjs';
 import headingSections from './heading-sections.mjs';
+import cjkStrong from './cjk-strong.mjs';
+import noteAttachments from './note-attachments.mjs';
 const catalog = JSON.parse(fs.readFileSync(new URL('./catalog.json', import.meta.url), 'utf8'));
 const topics = groupTopics(catalog);
 const mainTopics = topics.filter(topic => topic.folder !== 'demo');
@@ -17,6 +19,11 @@ export default defineConfig({
   markdown: {
     math: true,
     config(md) {
+      md.use(cjkStrong);
+      md.use(noteAttachments, {
+        base,
+        links: JSON.parse(fs.readFileSync(new URL('./attachment-map.json', import.meta.url), 'utf8'))
+      });
       md.use(headingSections);
       const htmlInline = md.renderer.rules.html_inline;
       md.renderer.rules.html_inline = (tokens, idx, options, env, self) => /^<\/?(?:EOS|END|BOS|PAD|UNK|MASK)>$/i.test(tokens[idx].content)

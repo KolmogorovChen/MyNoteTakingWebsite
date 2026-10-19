@@ -4,7 +4,7 @@
   "type": "module",
   "packageManager": "pnpm@11.19.0",
   "scripts": {
-    "test": "node --test scripts/check-heading-sections.mjs",
+    "test": "node --test scripts/check-heading-sections.mjs scripts/check-cjk-strong.mjs scripts/check-note-attachments.mjs",
     "dev": "node scripts/site.mjs dev",
     "build": "node scripts/site.mjs build",
     "preview": "vitepress preview .notes-site --host 127.0.0.1 --port 5173"

@@ -3,7 +3,9 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createMarkdownRenderer } from 'vitepress';
 import { groupTopics, topicItems } from '../site/.vitepress/topics.mjs';
+import { collectNoteAttachments } from './note-attachments.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const output = path.join(root, '.notes-site');
@@ -12,6 +14,7 @@ const skip = new Set(['node_modules', '.git', '.notes-site', '.local-runtime', '
 const warnings = new Set();
 const assetMapFile = path.join(root, 'site', 'asset-map.json');
 const assetMap = fs.existsSync(assetMapFile) ? JSON.parse(fs.readFileSync(assetMapFile, 'utf8')) : {};
+const attachmentMarkdown = await createMarkdownRenderer(root, { math: true });
 function scan(dir = root) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => {
     if (skip.has(e.name) || e.name.startsWith('.')) return [];
@@ -39,6 +42,7 @@ function asset(src, file) {
 function generate() {
   warnings.clear();
   fs.mkdirSync(output, { recursive: true });
+  const attachments = {};
   const files = scan().sort((a,b) => a.localeCompare(b, 'zh-CN'));
   const previousCatalog = path.join(output, '.vitepress', 'catalog.json');
   if (fs.existsSync(previousCatalog)) {
@@ -51,6 +55,9 @@ function generate() {
   const entries = files.map(file => {
     const rel = path.relative(root, file).replaceAll('\\', '/');
     const raw = fs.readFileSync(file, 'utf8');
+    attachments[`notes/${rel}`] = collectNoteAttachments(attachmentMarkdown, raw, {
+      file, root, publicDir: path.join(output, 'public'), warn: warning => warnings.add(warning)
+    });
     const title = raw.match(/^#\s+(.+)$/m)?.[1]?.trim() || path.basename(file, '.md');
     const url = '/notes/' + rel.replace(/\.md$/, '');
     let content = raw.replace(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi, (_, src) => `![笔记插图](${asset(src, file)})`);
@@ -61,6 +68,7 @@ function generate() {
     return { text: title, link: url, relativePath: rel, size: Math.round(Buffer.byteLength(raw) / 1024) };
   });
   fs.cpSync(path.join(root, 'site', '.vitepress'), path.join(output, '.vitepress'), { recursive: true });
+  fs.writeFileSync(path.join(output, '.vitepress', 'attachment-map.json'), JSON.stringify(attachments, null, 2));
   fs.cpSync(path.join(root, 'site', 'public'), path.join(output, 'public'), { recursive: true });
   fs.writeFileSync(assetMapFile, JSON.stringify(assetMap, null, 2));
   fs.writeFileSync(path.join(output, '.vitepress', 'catalog.json'), JSON.stringify(entries, null, 2));
