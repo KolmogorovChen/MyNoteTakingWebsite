@@ -109,7 +109,7 @@ MDP 五元组 $(\mathcal{S}, \mathcal{A}, P, r, \gamma)$ 里，$\mathcal{S}$ 是
 
 即 $P(s_{t+1} \mid s_t, a_t)$ —— 转移只需要看 $s_t$，不需要看更早的历史。所以状态的选取标准只有一个：**它是否包含了决策所需的全部信息**。
 
-<img src="/figures/states.png" alt="states" style="zoom:55%;" />
+<img src="figures/states.png" alt="states" style="zoom:55%;" />
 
 对话场景有个天然特点：**没有任何一个单独的时刻能代表"当前情况"**，即**环境真实处于哪个状态 $s_t$ **，Agent 只能看到它"投射"出来的一个**观测（observation）**
 
