@@ -2299,3 +2299,60 @@ $$
 在 PPO 原论文中，自适应 KL 惩罚作为一项 baseline，在实验中的表现不如 Clip。
 
 ------------
+
+### 2. PPO 的完整训练流程
+
+**训练伪代码**
+
+$$
+\begin{array}{l}
+\textbf{Algorithm 1: PPO, Actor-Critic Style} \\
+\textbf{for } \text{iteration} = 1, 2, \dots \textbf{ do} \\
+\quad \textbf{for } \text{actor} = 1, 2, \dots, N \textbf{ do} \\
+\quad \quad \text{Run policy } \pi_{\theta_{\text{old}}} \text{ in environment for } T \text{ timesteps} \\
+\quad \quad \text{Compute advantage estimates } \hat{A}_1, \dots, \hat{A}_T \\
+\quad \textbf{end for} \\
+\quad \text{Optimize surrogate } L \text{ wrt } \theta, \text{ with } K \text{ epochs and minibatch size } M \le NT \\
+\quad \theta_{\text{old}} \leftarrow \theta \\
+\textbf{end for}
+\end{array}
+$$
+
+```markdown
+初始化 Actor 参数 θ、Critic 参数 φ
+
+对每一轮采样迭代 k：
+
+    1. 以当前参数确定采样策略和采样阶段价值函数
+
+    2. 固定参数，与环境交互，保存：
+       状态、动作、奖励、实际后继状态、边界标记、
+       旧动作对数概率、旧价值预测
+
+    3. 沿各环境的时间顺序计算原始 GAE
+
+    4. 由原始 GAE 和旧价值预测构造回报目标
+       可选：标准化供 Actor 使用的优势
+
+    5. 对当前数据执行至多 K 个优化 epoch：
+           打乱样本并划分小批量
+
+           对每个小批量：
+               重新计算当前动作对数概率和当前价值
+               使用固定旧对数概率计算概率比
+               计算策略损失、价值损失和可选熵奖励
+               反向传播并更新参数
+
+               若触发提前停止条件：
+                   结束本批次剩余优化
+
+    6. 使用更新后的策略开始下一轮采样
+```
+
+其中，**一次采样迭代、一次优化 epoch 和一次参数更新是不同层次**：
+
+- 一次采样迭代：收集一批新数据，并完成围绕该批数据的优化；
+- 一次优化 epoch：完整遍历该批数据一次；
+- 一次参数更新：利用一个小批量执行优化步骤。
+
+本轮优化结束后，下一轮使用更新后的策略重新采集轨迹。新轨迹可以包含相同的初始任务或提示词，但其动作由新的策略生成。
