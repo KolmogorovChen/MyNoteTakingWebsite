@@ -1887,3 +1887,415 @@ $$
 
 --------
 
+## 六、Actor–Critic
+
+Actor–Critic 是将**策略优化**与**价值学习**结合的强化学习框架。其中，Actor 根据状态选择动作，Critic 学习价值函数，并参与构造策略更新所需的优势估计。
+
+它们通过下面这条过程联系起来：
+
+$$
+\text{Actor 采样动作} \;\longrightarrow\; \text{环境提供奖励与后续状态} \;\longrightarrow\; \text{结合 Critic 计算优势} \;\longrightarrow\; \text{更新 Actor 与 Critic} 
+$$
+
+本节采用状态价值型 Critic：
+
+$$
+\boxed{ \text{Actor：}\pi_\theta(a\mid s) \qquad \text{Critic：}V_\phi(s)\approx V^{\pi_\theta}(s) } 
+$$
+
+前面介绍的 TD 和 GAE，正是连接价值预测与策略更新的方法。
+
+### 1. 基本结构
+
+Actor 与 Critic 的分工如下。
+
+| 组成部分 | 输出                               | 学习任务                               |
+| -------- | ---------------------------------- | -------------------------------------- |
+| Actor    | 动作概率分布 $\pi_\theta(a\mid s)$ | 调整动作选择，使期望回报提高           |
+| Critic   | 状态价值预测 $V_\phi(s)$           | 估计执行当前策略能够获得的未来累计回报 |
+
+奖励由环境或任务评价机制提供。Critic 根据奖励和状态转移数据学习价值，再与采样反馈共同构造优势估计：
+
+$$
+(r_t,\;V_\phi(s_t),\;V_\phi(s_{t+1}),\ldots) \quad\longrightarrow\quad \hat A_t.
+$$
+
+因此，状态价值型 Critic 对策略学习的作用，需要通过优势估计体现。
+
+$\hat A_t$ 描述采样动作相对于该状态下平均表现的优劣，其准确性受到采样噪声和价值预测误差的影响。
+
+Actor 与 Critic 可以采用独立网络，也可以共享特征提取网络、使用不同输出头。以下按参数相互独立的情形说明。
+
+-------
+
+### 2. Actor 与 Critic 的优化目标
+
+设第 $k$ 次迭代使用策略 $\pi_{\theta_k}$ 采集数据，并使用价值函数 $V_{\phi_k}$ 计算优势估计。将批次中的时间步统一编号为 $t=1,\ldots,M$。
+
+#### 2.1 Actor：利用优势调整策略
+
+Actor 的基本经验损失为：
+
+$$
+\mathcal L_{\mathrm{Actor}}(\theta) = -\frac{1}{M} \sum_{t=1}^{M} \log\pi_\theta(a_t\mid s_t)\, \operatorname{sg}(\hat A_t)
+$$
+
+其中，$\operatorname{sg}$ 表示停止梯度传播，即将优势视为固定权重。
+
+对 $\theta$ 求导：
+
+$$
+\nabla_\theta\mathcal L_{\mathrm{Actor}} = -\frac{1}{M} \sum_{t=1}^{M} \hat A_t \nabla_\theta\log\pi_\theta(a_t\mid s_t). 
+$$
+
+采用梯度下降时，每个样本的作用取决于优势符号：
+
+- $\hat A_t>0$：产生提高该动作对数概率的梯度贡献；
+- $\hat A_t<0$：产生降低该动作对数概率的梯度贡献；
+- $\hat A_t=0$：该样本不提供直接的策略更新信号。
+
+实际参数更新由整个批次的梯度共同决定，因此，上述方向不构成每个动作概率变化的逐项保证。
+
+这一损失用于构造策略更新方向，其数值本身不等于负的期望回报，持续降低同一批数据上的损失也不保证策略性能持续提高。[Spinning Up：策略优化](https://spinningup.openai.com/en/latest/spinningup/rl_intro3.html)
+
+-------
+
+#### 2.2 Critic：拟合回报目标
+
+记根据采样数据构造的回报目标为 $y_t$，Critic 通过均方误差学习：
+
+$$
+\boxed{ \mathcal L_{\mathrm{Critic}}(\phi) = \frac{1}{M} \sum_{t=1}^{M} \left( V_\phi(s_t)-\operatorname{sg}(y_t) \right)^2 }
+$$
+
+$y_t$ 可以使用 Monte Carlo 回报，也可以使用包含自举预测的回报估计。
+
+采用上一章的 GAE 时，一种配套的回报目标为：
+
+$$
+\boxed{ y_t = V_{\phi_k}(s_t) + \hat A_t^{\mathrm{GAE}} }
+$$
+
+该目标必须使用**同一采样阶段的价值预测和未经标准化的 GAE**构造，并在当前批次的优化过程中保持固定。它通常不等于实际累计回报 $G_t$。
+
+Actor 与 Critic 分别执行：
+
+$$
+\begin{aligned} \theta &\leftarrow \theta-\alpha\nabla_\theta\mathcal L_{\mathrm{Actor}},\\[6pt] \phi &\leftarrow \phi-\beta\nabla_\phi\mathcal L_{\mathrm{Critic}}, \end{aligned} 
+$$
+
+其中，$\alpha$ 和 $\beta$ 分别为策略与价值函数的学习率。
+
+-------
+
+#### 2.3 协同学习过程
+
+某一步，Actor 选择一个动作，采样阶段的价值预测与优势估计分别为：
+
+$$
+V_{\phi_k}(s_t)=0.5, \qquad \hat A_t^{\mathrm{GAE}}=0.46. 
+$$
+
+该样本在两个学习任务中具有不同作用。
+
+对于 Actor，$0.46$ 是策略更新的权重，对应损失项：
+
+$$
+\ell_{\mathrm{Actor}} = -0.46\log\pi_\theta(a_t\mid s_t). 
+$$
+
+对于 Critic，回报目标为：
+
+$$
+y_t=0.5+0.46=0.96, 
+$$
+
+对应损失项：
+
+$$
+\ell_{\mathrm{Critic}} = \left(V_\phi(s_t)-0.96\right)^2. 
+$$
+
+因此，同一批交互数据既用于调整动作选择，也用于改进价值预测。其基本过程为：
+
+$$
+\boxed{ \text{采样交互} \;\longrightarrow\; \text{计算优势与回报目标} \;\longrightarrow\; \text{更新策略与价值函数} }
+$$
+
+策略更新后，后续动作的分布随之改变，价值函数需要继续跟踪新的策略；改进后的价值预测又参与下一轮优势估计。
+
+这一协同机制尚未规定策略更新幅度，也未解决旧数据如何用于多轮策略更新的问题。PPO 将进一步设计 Actor 的优化目标，对这两个问题作出处理。
+
+------------
+
+## 七、PPO（Proximal Policy Optimization）
+
+### 1. PPO 的核心思想与目标
+
+Actor–Critic 利用优势估计确定策略更新的方向，但更新幅度同样影响训练效果。即使更新方向合理，过大的策略变化也可能使性能下降。
+
+**PPO（Proximal Policy Optimization，近端策略优化）的核心思想，是在利用采样数据改进策略的同时，抑制过大的策略更新。** Schulman 等提出的原论文包含裁剪代理目标和自适应 KL 惩罚两种构造，本节重点讨论 **PPO-Clip**。[PPO 原论文，§3–4](https://arxiv.org/pdf/1707.06347)
+
+------------
+
+#### 1.1 多轮优化
+
+这里首先介绍一种**多轮优化**的参数更新的技巧。
+
+**多轮优化（multi-epoch optimization）**：对同一批数据完整遍历多轮。
+
+其主要目的之一，确实是降低对采样的需求，提高样本利用率。 环境交互或 LLM 回答生成可能很昂贵，因此希望一批数据支持多次更新。代价是增加梯度计算，并需要控制策略偏离采样策略的程度。
+
+这种方法的核心思想就是：**采样一次，固定这批数据和优势估计，连续更新模型多次。**
+
+设旧策略 $\pi_{\theta_0}$ 生成了一批样本：
+
+$$
+\mathcal D=\{(s_t,a_t,\hat A_t)\}_{t=1}^{M}.
+$$
+
+用这批数据构造目标：
+
+$$
+L_{\mathcal D}^{\mathrm{PG}}(\theta) = \frac1M\sum_{t=1}^{M} \log\pi_\theta(a_t\mid s_t)\hat A_i.
+$$
+
+然后连续执行：
+
+$$
+\begin{aligned} \theta_1 &=\theta_0+\alpha\nabla_\theta L_{\mathcal D}^{\mathrm{PG}}(\theta_0), \\[6pt] \theta_2 &=\theta_1+\alpha\nabla_\theta L_{\mathcal D}^{\mathrm{PG}}(\theta_1), \\[6pt] \theta_3 &=\theta_2+\alpha\nabla_\theta L_{\mathcal D}^{\mathrm{PG}}(\theta_2). \end{aligned} 
+$$
+
+这就是三步优化。三次更新的区别如下：
+
+| 更新   | 使用的样本和优势    | 用哪个模型计算概率与梯度 |
+| ------ | ------------------- | ------------------------ |
+| 第一次 | 固定的 $\mathcal D$ | $\pi_{\theta_0}$         |
+| 第二次 | 同一批 $\mathcal D$ | $\pi_{\theta_1}$         |
+| 第三次 | 同一批 $\mathcal D$ | $\pi_{\theta_2}$         |
+
+**固定的是样本与优势，变化的是计算样本概率的模型。** 每次都重新计算梯度，中间没有采集新轨迹。
+
+例如，采集 $1024$ 个样本，每个小批量包含 $256$ 个样本，完整训练 $4$ 轮，则：
+
+$$
+\text{参数更新次数} = \frac{1024}{256}\times4 = 16.
+$$
+
+每个样本被使用 $4$ 次；整个过程中只采集了这一批数据。
+
+对应到 LLM，就是：旧模型先生成一批回答并计算优势；更新参数后，仍然使用这些回答，重新计算它们在当前模型下的对数概率，再进行下一次更新。
+
+问题出现在第二次及后续更新：模型已经变成 $\pi_{\theta_1}$、$\pi_{\theta_2}$，但样本和优势仍来自 $\pi_{\theta_0}$。继续提高这个固定批次上的目标，就不再自动对应于提高当前策略的真实回报。
+
+对于这个方法，PPO 原论文使用了更具体的表述：**多轮小批量更新（multiple epochs of minibatch updates）**。它是一种训练方式，并非一个独立算法的专有名称。[PPO 原论文](https://arxiv.org/abs/1707.06347)
+
+----------
+
+#### 1.2 策略更新的局部性
+
+上一节的 Actor 损失，对应于最大化以下经验目标：
+
+$$
+L^{\mathrm{PG}}(\theta) = \frac{1}{M} \sum_{t=1}^{M} \log\pi_\theta(a_t\mid s_t)\hat A_t.
+$$
+
+其中，样本由更新前的策略采集，$\hat A_t$ 也根据该策略下的交互结果与价值预测计算。
+
+记采样策略为：
+
+$$
+\pi_{\mathrm{old}} = \pi_{\theta_{\mathrm{old}}}. 
+$$
+
+在本轮优化中：
+
+- $\pi_{\mathrm{old}}$ 固定，作为生成当前批次数据的策略；
+- $\hat A_t$ 固定，作为当前批次的优势估计；
+- $\pi_\theta$ 随参数更新而改变。
+
+优势估计所评价的是：**在旧策略下，某个动作相对于该状态的平均表现好多少。**
+
+随着策略改变，后续动作分布以及状态访问分布也会改变。因此，在旧策略数据上得到的更新方向具有局部意义。若直接对**同一批数据上的 $L^{\mathrm{PG}}$ 进行大量优化**，可能使新策略远离采样策略，削弱这些数据对当前策略的代表性。
+
+PPO 原论文指出，对普通策略梯度目标直接进行**多步优化**，可能造成破坏性的过大更新。因此，PPO 需要同时处理两个问题：
+
+1. 在目标中显式表示新旧策略的差异；
+2. 当某些动作概率已经沿优势方向变化较大时，减弱继续推动这种变化的激励。[PPO 原论文，§2.1](https://arxiv.org/pdf/1707.06347#page=2)
+
+------------
+
+#### 1.3 概率比与代理目标
+
+**（1）新旧策略的概率比**
+
+对旧策略采样得到的状态—动作对 $(s_t,a_t)$，定义：
+
+$$
+\rho_t(\theta) = \frac{\pi_\theta(a_t\mid s_t)} {\pi_{\mathrm{old}}(a_t\mid s_t)}
+$$
+
+这里使用 $\rho_t$ 表示概率比，以区别于奖励 $r_t$。PPO 原论文将其记为 $r_t(\theta)$。概率比描述同一动作在新旧策略下的**相对概率**。
+
+**（2）概率比的作用**
+
+概率比具有重要性采样权重的形式。
+
+固定状态 $s$，假设旧策略覆盖新策略的动作支持集，则：
+
+$$
+\begin{aligned} 
+\mathbb E_{a\sim\pi_{\theta}(\cdot\mid s)} \left[A^{\pi_{\mathrm{old}}}(s,a) \right] 
+&= \sum_a \pi_\theta(a\mid s) A^{\pi_{\mathrm{old}}}(s,a)
+\\[6pt]
+&= \sum_a \pi_{\mathrm{old}}(a\mid s) \frac{\pi_\theta(a\mid s)}{\pi_{\mathrm{old}}(a\mid s)} A^{\pi_{\mathrm{old}}}(s,a)
+\\[6pt]
+&=\mathbb E_{a\sim\pi_{\mathrm{old}}(\cdot\mid s)} \left[ \frac{\pi_\theta(a\mid s)} {\pi_{\mathrm{old}}(a\mid s)} A^{\pi_{\mathrm{old}}}(s,a) \right] 
+\end{aligned}
+$$
+
+$\mathbb E_{a\sim\pi_{\theta}(\cdot\mid s)}$ 表示在这个固定状态下，当前策略是否更倾向于选择旧策略优势为正的动作。
+
+据此，利用旧策略数据构造经验代理目标：
+
+$$
+L^{\mathrm{SUR}}(\theta) = \frac{1}{M} \sum_{t=1}^{M} \rho_t(\theta) \hat A_t, \quad \rho_t(\theta) = \frac{\pi_\theta(a_t\mid s_t)} {\pi_{\mathrm{old}}(a_t\mid s_t)}
+$$
+
+该式对应 PPO 原论文式（6）中的 $L^{\mathrm{CPI}}$。
+
+这里修正的是**给定状态下的动作分布**，状态仍来自旧策略采集的数据。因此，这一目标保留了旧策略的状态采样分布，属于对策略性能的局部代理。这种处理与 TRPO 中的局部近似一致。[TRPO 原论文，§2](https://arxiv.org/pdf/1502.05477#page=2)
+
+-----------------
+
+**（3）与策略梯度的关系**
+
+注意：
+
+$$
+\nabla_\theta\rho_t(\theta) = \rho_t(\theta) \nabla_\theta\log\pi_\theta(a_t\mid s_t). 
+$$
+
+原策略梯度目标的梯度为：
+
+$$
+\nabla_\theta L^{\mathrm{PG}}(\theta) = \frac{1}{M} \sum_{t=1}^{M} \hat A_t \nabla_\theta\log\pi_\theta(a_t\mid s_t). 
+$$
+
+概率比代理目标的梯度为：
+
+$$
+\begin{aligned} 
+\nabla_\theta L^{\mathrm{SUR}}(\theta) &= \frac{1}{M} \sum_{t=1}^{M} \hat A_t\nabla_\theta\rho_t(\theta)
+\\[6pt] 
+&= \frac{1}{M} \sum_{t=1}^{M} \hat A_t\rho_t(\theta) \nabla_\theta\log\pi_\theta(a_t\mid s_t).
+\end{aligned} 
+$$
+
+二者相差一个概率比因子 $$\rho_t(\theta)$$。
+
+在更新起点 $$\theta=\theta_{\mathrm{old}}$$，所有样本均有 $$\rho_t=1$$，因此：
+
+$$
+\left. \nabla_\theta L^{\mathrm{SUR}}(\theta) \right|_{\theta=\theta_{\mathrm{old}}} = \frac{1}{M} \sum_{t=1}^{M} \hat A_t \left. \nabla_\theta\log\pi_\theta(a_t\mid s_t) \right|_{\theta=\theta_{\mathrm{old}}}.
+$$
+
+在使用相同样本、优势和权重的条件下，这与上一节基本 Actor 损失的负梯度一致。
+
+不过，单独最大化 $$L^{\mathrm{SUR}}$$，仍会持续推动正优势动作的概率增加、负优势动作的概率降低。概率比本身没有限制更新幅度，因而还需要进一步改造目标。
+
+------
+
+#### 1.4 PPO-Clip 的裁剪目标
+
+**（1）目标函数**
+
+设裁剪参数为 $0<\epsilon<1$，定义：
+
+$$
+\operatorname{clip}(x,l,u) = \min\bigl(\max(x,l),u\bigr) = \begin{cases}
+l, & x < l \\[4pt]
+x, & l \le x \le u \\[4pt]
+u, & x > u
+\end{cases}
+$$
+
+PPO-Clip 的目标为：
+
+$$
+\boxed{ L^{\mathrm{CLIP}}(\theta) = \frac{1}{M} \sum_{t=1}^{M} \min \left[ \rho_t(\theta)\hat A_t,\; \operatorname{clip} \bigl(\rho_t(\theta),1-\epsilon,1+\epsilon\bigr) \hat A_t \right] }
+$$
+
+这是 PPO 原论文式（7）。其中，未裁剪项保留原来的代理目标，裁剪项限制沿优势方向继续改善时能够获得的目标值，再由 $\min$ 选择较小者。[PPO 原论文，§3](https://arxiv.org/pdf/1707.06347#page=3)
+
+若采用梯度下降，Actor 对应的损失为：
+
+$$
+\mathcal L_{\mathrm{Actor}}^{\mathrm{PPO}} = -L^{\mathrm{CLIP}}(\theta). 
+$$
+
+以下讨论均以**最大化 $L^{\mathrm{CLIP}}$** 为准。
+
+**（2）正优势：限制概率过度增加的激励**
+
+记单个样本的目标为 $\ell_t$。当 $\hat A_t>0$ 时，可将其化简为：
+
+$$
+\ell_t(\theta) = \hat A_t \min\bigl(\rho_t(\theta),1+\epsilon\bigr). 
+$$
+
+即：
+
+$$
+\boxed{ \ell_t(\theta) = \begin{cases} \rho_t(\theta)\hat A_t, &\rho_t(\theta)\leq1+\epsilon,\\[4pt] (1+\epsilon)\hat A_t, &\rho_t(\theta)>1+\epsilon. \end{cases} }
+$$
+
+在 $\rho_t<1+\epsilon$ 时，提高该动作的概率能够提高目标值。
+
+当 $\rho_t>1+\epsilon$ 后，目标进入平台。继续提高该动作的概率，不再增加这个样本对裁剪目标的贡献。
+
+另一方面，若概率朝不利方向降低，即使 $\rho_t<1-\epsilon$，目标仍保留 $\rho_t\hat A_t$，继续提供提高该动作概率的梯度。
+
+**（3）负优势：限制概率过度降低的激励**
+
+当 $\hat A_t<0$ 时，由于乘以负数会反转大小关系：
+
+$$
+\ell_t(\theta) = \hat A_t \max\bigl(\rho_t(\theta),1-\epsilon\bigr).
+$$
+
+即：
+
+$$
+\boxed{ \ell_t(\theta) = \begin{cases} (1-\epsilon)\hat A_t, &\rho_t(\theta)<1-\epsilon,\\[4pt] \rho_t(\theta)\hat A_t, &\rho_t(\theta)\geq1-\epsilon. \end{cases} } 
+$$
+
+在 $\rho_t>1-\epsilon$ 时，降低该动作的概率，会使目标值变得更大。例如，目标从 $-0.5$ 变为 $-0.4$，表示目标得到改善。
+
+当 $\rho_t<1-\epsilon$ 后，目标进入平台。继续降低该动作的概率，不再提高这个样本的裁剪目标。
+
+若概率朝不利方向增加，即使 $\rho_t>1+\epsilon$，目标仍保留 $\rho_t\hat A_t$，继续提供降低该动作概率的梯度。
+
+<img src="figures/ppo_clip_objective_20261030.png" alt="ppo_clip_objective_20261030" style="zoom: 15%;" />
+
+------------
+
+#### 1.5 自适应 KL 惩罚
+
+自适应 KL 惩罚构造通常称为 **PPO-Penalty**。其基本思想是：**在策略代理目标中扣除新旧策略的 KL 散度，并根据实际更新幅度调整惩罚强度，使每轮策略变化接近预设目标。**
+
+在未裁剪的代理目标中加入这一惩罚：
+
+$$
+L^{\mathrm{KLPEN}}(\theta) = \mathbb{E}_t \left[ \rho_t(\theta)\hat A_t - \beta \ \mathrm{KL} \left( \pi_{\mathrm{old}}(\cdot\mid s_t) \,\Vert\, \pi_\theta(\cdot\mid s_t) \right). \right]
+$$
+其中，$\beta>0$ 为惩罚系数。这对应 PPO 原论文式（8）。[PPO 原论文，§4](https://arxiv.org/pdf/1707.06347#page=4)
+
+最大化该目标时，两部分分别发挥作用：
+
+- $\rho_t\hat A_t$：推动策略向优势估计指示的方向改变；
+- $-\beta d(\theta)$：降低偏离旧策略所能获得的净收益。
+
+在 PPO 原论文中，自适应 KL 惩罚作为一项 baseline，在实验中的表现不如 Clip。
+
+------------
