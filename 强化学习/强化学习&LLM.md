@@ -2192,9 +2192,9 @@ $$
 \end{aligned} 
 $$
 
-二者相差一个概率比因子 $$\rho_t(\theta)$$。
+二者相差一个概率比因子 $\rho_t(\theta)$。
 
-在更新起点 $$\theta=\theta_{\mathrm{old}}$$，所有样本均有 $$\rho_t=1$$，因此：
+在更新起点 $\theta=\theta_{\mathrm{old}}$，所有样本均有 $\rho_t=1$，因此：
 
 $$
 \left. \nabla_\theta L^{\mathrm{SUR}}(\theta) \right|_{\theta=\theta_{\mathrm{old}}} = \frac{1}{M} \sum_{t=1}^{M} \hat A_t \left. \nabla_\theta\log\pi_\theta(a_t\mid s_t) \right|_{\theta=\theta_{\mathrm{old}}}.
@@ -2202,7 +2202,7 @@ $$
 
 在使用相同样本、优势和权重的条件下，这与上一节基本 Actor 损失的负梯度一致。
 
-不过，单独最大化 $$L^{\mathrm{SUR}}$$，仍会持续推动正优势动作的概率增加、负优势动作的概率降低。概率比本身没有限制更新幅度，因而还需要进一步改造目标。
+不过，单独最大化 $L^{\mathrm{SUR}}$，仍会持续推动正优势动作的概率增加、负优势动作的概率降低。概率比本身没有限制更新幅度，因而还需要进一步改造目标。
 
 ------
 
