@@ -710,7 +710,17 @@ $$
 
 **即使最终奖励本身不可微，我们仍然可以通过模型生成这些动作的对数概率来估计目标函数对模型参数的梯度。**
 
-但是，你现在只需要先理解它的直观含义：
+在真实训练时，构造**代理损失**：
+$$
+\mathcal L(\theta) = -R(\tau) \sum_{t=1}^{T} \log\pi_\theta(a_t\mid h_t)
+$$
+它的梯度：
+$$
+\nabla_{\theta} \mathcal L(\theta) =   R(\tau) \sum_{t=1}^{T} \nabla_\theta\log\pi_\theta(a_t\mid h_t)
+$$
+是真实梯度的无偏估计。
+
+总结一下流程：
 
 1. 根据当前 Policy 生成对话轨迹。
 2. 使用环境或评估器计算奖励。
@@ -2356,3 +2366,494 @@ $$
 - 一次参数更新：利用一个小批量执行优化步骤。
 
 本轮优化结束后，下一轮使用更新后的策略重新采集轨迹。新轨迹可以包含相同的初始任务或提示词，但其动作由新的策略生成。
+
+------
+
+## 八、RLHF 与 GRPO
+
+### 1. RLHF：人类偏好与奖励建模
+
+**RLHF（Reinforcement Learning from Human Feedback，基于人类反馈的强化学习）**利用人类评价提供目标信息，并将其转化为策略优化所需的学习信号。
+
+对于开放式语言任务，回答质量往往涉及正确性、相关性、清晰度和指令遵循等多个方面，**难以完全用固定规则定义奖励**。经典 RLHF 的处理方式是：先根据人类的反馈学习一个奖励模型，再利用该模型评价新回答，指导语言策略更新。
+
+#### 1.1 经典 RLHF 流程
+
+以 InstructGPT 为例，训练过程包含三个主要阶段：
+
+| 阶段            | 训练数据                           | 学习目标                             |
+| --------------- | ---------------------------------- | ------------------------------------ |
+| 监督微调（SFT） | 提示词与高质量示范回答             | 提高示范回答的条件概率               |
+| 奖励建模（RM）  | 同一提示词下多个回答的人类偏好比较 | 学习预测人类比较结果的评分函数       |
+| 强化学习（RL）  | 提示词、策略生成的回答及其奖励     | 调整生成策略，提高正则化后的期望奖励 |
+
+InstructGPT 采用了示范微调、偏好数据训练奖励模型、PPO 优化策略的三阶段结构。[InstructGPT 原论文，§3.5](https://arxiv.org/pdf/2203.02155#page=8)
+
+-------------
+
+#### 1.2 偏好数据与奖励模型
+
+##### 1.2.1 成对偏好的表示
+
+设提示词为 $x$，两个候选回答为 $y_A$ 和 $y_B$。如果标注者更偏好 $y_A$，记为：
+
+$$
+y_A\succ y_B\mid x.
+$$
+
+对于具有明确偏好方向的样本，通常将较优回答记为 $y_w$，较差回答记为 $y_l$，构成数据集：
+
+$$
+\mathcal D_{\mathrm{pref}} = \left\{ (x^{(i)},y_w^{(i)},y_l^{(i)}) \right\}_{i=1}^{n}.
+$$
+
+----------------
+
+##### 1.2.2 **从评分差到偏好概率**
+
+设提示为 $x$，完整回答为 $y$。奖励模型是参数为 $\psi$ 的评分函数：
+
+$$
+\boxed{ R_\psi(x,y)\in\mathbb R }
+$$
+
+它读取提示词和回答，输出一个标量。实现上，可以使用**语言模型编码输入，再通过标量输出头产生评分**。
+
+为了利用比较标签训练该函数，需要建立评分与偏好之间的关系。自然地，若 $R_\psi(x,y_A) > R_\psi(x,y_B)$，判定 $y_A\succ y_B\mid x$。
+
+常用的 Bradley–Terry 模型定义：
+
+$$
+\begin{aligned} 
+P_\psi(y_A\succ y_B\mid x) &= \frac{ \exp R_\psi(x,y_A) }{ \exp R_\psi(x,y_A)+\exp R_\psi(x,y_B) }\\[10pt] &= \sigma\left( R_\psi(x,y_A)-R_\psi(x,y_B) \right), 
+\end{aligned}
+$$
+
+其中：$\sigma(z)=\frac{1}{1+e^{-z}}$
+
+这一定义将**评分差**映射为比较概率：
+
+- 两个回答评分相同，预测偏好概率为 $0.5$；
+- $y_A$ 的评分更高，预测其胜出的概率大于 $0.5$；
+- 评分差越大，模型对这一比较结果越有信心。
+
+------------
+
+##### 1.2.3 奖励模型的结构
+
+一种常见结构是：保留预训练或 SFT 模型的 Transformer 主干，将词表预测头替换为标量评分头。InstructGPT 采用的就是这种方法。[InstructGPT，§3.5 与附录 C](https://arxiv.org/pdf/2203.02155)
+
+以解码器模型为例，可以取回答末尾有效 token 的隐藏表示 $h_\eta(x,y)$，通过线性层得到分数：
+
+$$
+\boxed{ R_\psi(x,y)=w^\top h_\eta(x,y)+b } 
+$$
+
+其中 $\psi=(\eta,w,b)$。其计算过程为：
+
+$$
+\text{提示＋完整回答} \;\longrightarrow\; \text{Transformer} \;\longrightarrow\; \text{末尾隐藏表示} \;\longrightarrow\; \text{一个实数分数}. 
+$$
+
+因此，从网络结构看，它可以具有大语言模型的主干；从当前任务看，它执行的是**回答评分**。Bradley–Terry 方法本身不要求采用大语言模型，其他能够处理输入并输出标量的网络也可以使用。
+
+##### 1.2.4 **奖励模型的训练目标**
+
+对于一条标注为 $y_w\succ y_l$ 的样本，希望模型提高这一比较结果的预测概率。因此，采用负对数似然损失：
+
+$$
+\boxed{ \mathcal L_{\mathrm{RM}}(\psi) = -\frac{1}{n} \sum_{i=1}^{n} \log\sigma \left( R_\psi(x^{(i)},y_w^{(i)}) - R_\psi(x^{(i)},y_l^{(i)}) \right) }
+$$
+
+这是一种二分类交叉熵形式。InstructGPT 的奖励模型采用了这一类成对比较损失。[InstructGPT 原论文，式（1）](https://arxiv.org/pdf/2203.02155#page=8)
+
+记单个样本的评分差为：
+
+$$
+\Delta = R_\psi(x,y_w)-R_\psi(x,y_l),
+$$
+
+则该样本的损失为：
+
+$$
+\ell(\Delta)=-\log\sigma(\Delta), \quad \frac{\partial\ell}{\partial\Delta} = \sigma(\Delta)-1.
+$$
+
+进一步，对两个输出分数分别求导：
+
+$$
+\begin{aligned} 
+\frac{\partial\ell}{\partial R_\psi(x,y_w)} =\sigma(\Delta)-1<0,\quad \frac{\partial\ell}{\partial R_\psi(x,y_l)} =1-\sigma(\Delta)>0. 
+\end{aligned}
+$$
+
+从单个样本对输出分数的梯度看，梯度下降会推动优选回答的评分升高、另一回答的评分降低。实际网络参数更新由整个训练批次共同决定。
+
+----------
+
+#### 1.3 利用奖励模型优化语言策略
+
+##### 1.3.1 从偏好评分到奖励信号
+
+奖励模型训练完成后，便可以评价没有人工比较标签的新回答：
+
+$$
+y\sim\pi_\theta(\cdot\mid x), \qquad R=R_\psi(x,y).
+$$
+
+在仅有末端任务奖励的设定中，可以将这一分数放在回答结束的位置，再结合参考策略正则项，构造训练奖励、回报和优势
+
+在这一阶段，奖励模型通常冻结。更新对象是生成回答的 Actor，以及所选算法需要的其他可训练部分，例如 PPO 中的 Critic。
+
+在典型的 RLHF 实现中，可以从 SFT 模型分别构建：
+
+| 模型                          | 输出头与输出                            | PPO 阶段是否更新 |
+| ----------------------------- | --------------------------------------- | ---------------- |
+| 策略模型 $\pi_\theta$         | 词表预测头，输出下一个 token 的概率分布 | 更新             |
+| 参考模型 $\pi_{\mathrm{ref}}$ | 词表预测头，输出下一个 token 的概率分布 | 固定             |
+| 奖励模型 $R_\psi$             | 标量评分头，为完整回答输出一个实数      | 通常固定         |
+
+奖励模型先通过偏好数据训练；随后，它为 PPO 提供奖励。参考模型通常保留 SFT 模型的参数，作为策略行为的参照。[InstructGPT，§3.5](https://arxiv.org/pdf/2203.02155)
+
+对于仅有末端奖励的任务，PPO 的优化目标：
+$$
+\mathbb E_{x\sim\mathcal D_{\mathrm{prompt}}} \mathbb E_{y\sim\pi_\theta(\cdot\mid x)} [R_\psi(x,y)]
+$$
+
+--------
+
+##### 1.3.2 带参考策略约束的优化目标
+
+仅提高奖励模型分数，可能推动策略偏离原有语言行为。常见做法是引入固定参考策略 $\pi_{\mathrm{ref}}$，通常取自 SFT 模型，并优化：
+
+$$
+\boxed{ J_{\mathrm{RLHF}}(\theta) = \mathbb E_{x\sim\mathcal D_{\mathrm{prompt}}} \left[ \mathbb E_{y\sim\pi_\theta(\cdot\mid x)} [R_\psi(x,y)] - \beta D_{\mathrm{KL}} \left( \pi_\theta(\cdot\mid x) \Vert \pi_{\mathrm{ref}}(\cdot\mid x) \right) \right] }
+$$
+
+其中：
+
+- $\mathcal D_{\mathrm{prompt}}$ 是强化学习阶段的提示词分布；
+- 第一项鼓励生成高奖励回答；
+- 第二项对偏离参考策略的行为施加代价
+
+在相应支持条件和可积条件成立时，这一目标也可写成：
+
+$$
+J_{\mathrm{RLHF}}(\theta) = \mathbb E_{\substack{x\sim\mathcal D_{\mathrm{prompt}}\\ y\sim\pi_\theta(\cdot\mid x)}} \left[ R_\psi(x,y) - \beta \log \frac{ \pi_\theta(y\mid x) }{ \pi_{\mathrm{ref}}(y\mid x) } \right].
+$$
+
+原因是对数概率比在当前策略分布下的期望等于相应 KL 散度。
+
+---------
+
+##### 1.3.3 可验证奖励：RLVR
+
+部分任务具有可以自动检查的结果。例如：
+
+- 数学题的最终答案能与标准答案比较；
+- 生成程序可以运行测试；
+- SQL 查询结果可以与预期结果比较。
+
+此时，可以直接使用验证器提供奖励。例如：
+
+$$
+R_{\mathrm{verify}}(x,y) = \begin{cases} 1,&\text{回答通过规定的验证},\\ 0,&\text{否则}. \end{cases} 
+$$
+
+这类训练通常称为 **RLVR（Reinforcement Learning with Verifiable Rewards，基于可验证奖励的强化学习）**。
+
+DeepSeek-R1-Zero 在数学、代码等任务中使用规则奖励，根据答案检查和预设测试等提供正确性反馈。[DeepSeek-R1 原论文，§2.2](https://arxiv.org/pdf/2501.12948#page=3)
+
+| 比较维度       | 基于偏好奖励模型的 RLHF          | RLVR                               |
+| -------------- | -------------------------------- | ---------------------------------- |
+| 奖励依据       | 从人类比较中学习的偏好评分       | 验证器、测试或明确规则             |
+| 适合评价的内容 | 有用性、表达质量、任务适配等     | 能够通过明确程序检查的结果         |
+| 主要局限       | 标注偏差、泛化误差、奖励过度优化 | 验证规则与测试覆盖不完整           |
+| 奖励模型的需求 | 本节所述流程需要学习奖励模型     | 可直接使用验证器，无须偏好奖励模型 |
+
+--------
+
+### 2. GRPO 的核心思想与目标
+
+**GRPO（Group Relative Policy Optimization，组相对策略优化）使用同一提示词下多条回答的奖励，构造组内相对优势，并结合 PPO 式裁剪更新策略。**
+
+其主要变化在于优势的来源：省去独立价值网络，利用同题回答之间的比较产生更新权重。
+
+GRPO 由 DeepSeekMath 提出。原论文同时讨论结果监督与过程监督，本节采用**每条完整回答获得一个结果奖励**的设定。[DeepSeekMath 原论文，§4.1](https://arxiv.org/pdf/2402.03300#page=13)
+
+<img src="figures/GRPOvsPPO.png" alt="GRPOvsPPO" style="zoom:60%;" />
+
+#### 2.1 从价值基线到组内比较
+
+在前述 Actor–Critic 方法中，优势通常根据奖励和 Critic 的价值预测构造。例如：
+
+$$
+\delta_t = r_t+\gamma V_\phi(s_{t+1})-V_\phi(s_t), 
+$$
+
+再通过 GAE 得到 $\hat A_t$。
+
+这种方法需要训练价值函数，使其能够根据不同生成前缀预测后续回报。GRPO 改为对**同一个提示词采样多条回答**，直接比较它们的结果奖励
+
+设提示词为 $x$，从旧策略中独立采样 $G\geq2$ 条回答：
+
+$$
+y_i\sim\pi_{\mathrm{old}}(\cdot\mid x), \qquad i=1,\ldots,G. 
+$$
+
+对每条回答计算奖励：
+
+$$
+R_i=R(x,y_i). 
+$$
+
+组内比较的依据是：
+
+> 对相同任务，奖励高于本组平均水平的回答获得**正向更新权重**，低于平均水平的回答获得**负向更新权重**。
+
+同一提示词限定了比较的任务条件。因此，组均值应根据该提示词对应的回答计算，而不是随意混合不同问题的奖励。
+
+这里的组均值反映的是**从同一个起始提示词生成完整回答的表现**，并未预测每个中间前缀的未来价值。
+
+---------
+
+#### 2.2 组相对优势的构造
+
+**（1）组内中心化与标准化**
+
+对奖励组 $(R_1,\ldots,R_G)$，定义：
+
+$$
+\mu_R = \frac{1}{G}\sum_{i=1}^{G}R_i, \quad \sigma_R = \sqrt{ \frac{1}{G} \sum_{i=1}^{G}(R_i-\mu_R)^2 }. 
+$$
+
+当 $\sigma_R>0$ 时，原论文采用的组相对优势为（分母加入数值稳定常数）：
+
+$$
+\hat A_i = \frac{R_i-\mu_R} {\sigma_R+\varepsilon_{\mathrm{num}}}, \qquad \varepsilon_{\mathrm{num}}>0.
+$$
+
+优势的符号由 $R_i-\mu_R$ 决定。一个回答即使获得正奖励，也可能因为低于组均值而得到负优势。
+
+在结果监督版本中，同一回答的所有有效生成 token 使用相同优势：
+
+$$
+\boxed{ \hat A_{i,t}=\hat A_i, \qquad t=1,\ldots,L_i }
+$$
+
+其中，$L_i$ 是第 $i$ 条回答的有效生成长度。这对应原论文 §4.1.2 的定义。[DeepSeekMath：结果监督下的 GRPO](https://arxiv.org/pdf/2402.03300#page=14)
+
+注意，这里的 $\hat A_i$ 是算法定义的**组内相对学习权重**。它与真实的 token 级优势函数具有不同含义：
+
+$$
+A^\pi(s_{i,t},y_{i,t})
+$$
+
+**同一回答共享一个结果优势**，表示整条生成轨迹获得共同的相对评价。它没有直接识别哪些 token 对成功起到了关键作用。不同 token 的实际梯度仍可不同，因为其**条件概率和概率比不同**。
+
+-----------
+
+#### 2.3 GRPO 的裁剪策略目标
+
+**（1）Token 级概率比**
+
+在 prompt $x$ 下，设组内第 $i$ 条回答为（$L_i$ 是该回答的 Token 长度）：
+
+$$
+y_i=(y_{i,1},\ldots,y_{i,L_i}),
+$$
+
+定义 token 对应的状态与概率比：
+
+$$
+s_{i,t}=(x,y_{i,<t}), \qquad \rho_{i,t}(\theta) = \frac{\pi_\theta(y_{i,t}\mid s_{i,t})} {\pi_{\mathrm{old}}(y_{i,t}\mid s_{i,t})}.
+$$
+
+本轮优化期间，回答、旧策略对数概率及组相对优势保持固定；当前策略概率随 $\theta$ 更新。
+
+**（2）将组相对优势代入 PPO-Clip**
+
+对每个有效生成 token，构造：
+
+$$
+\ell_{i,t}^{\mathrm{CLIP}}(\theta) = \min \left[ \rho_{i,t}(\theta)\hat A_i,\; \operatorname{clip} \bigl(\rho_{i,t}(\theta),1-\epsilon,1+\epsilon\bigr) \hat A_i \right]
+$$
+
+其裁剪逻辑沿用 PPO：
+
+- $\hat A_i>0$：鼓励提高相应动作概率，超过上阈值后，该项进入平台；
+- $\hat A_i<0$：鼓励降低相应动作概率，低于下阈值后，该项进入平台。
+
+朝优势方向的反方向变化时，目标仍保留相应的纠正梯度。裁剪改变的是优化激励，概率比仍可能超出区间。
+
+**（3）回答内平均与组内平均**
+
+原始 GRPO 先对每条回答的 token 项取平均，再对组内回答取平均：
+
+$$
+\begin{aligned}
+\mathcal J_{\mathrm{GRPO}}(\theta) &= \mathbb E_{\substack{ x\sim\mathcal D_{\mathrm{prompt}}\\ y_1,\ldots,y_G\sim\pi_{\mathrm{old}}(\cdot\mid x) }} S_{\theta}(x, y_1, \cdots, y_G)
+\\[10pt]
+S_{\theta}(x, y_1, \cdots, y_G) &= \frac{1}{G} \sum_{i=1}^{G} \frac{1}{L_i} \sum_{t=1}^{L_i} \ell_{i,t}^{\mathrm{CLIP}}(\theta)
+\\[10pt]
+&=
+\frac{1}{G} \sum_{i=1}^{G} \frac{1}{L_i} \sum_{t=1}^{L_i} \min \left[ \rho_{i,t}(\theta)\hat A_i,\; \operatorname{clip} \bigl(\rho_{i,t}(\theta),1-\epsilon,1+\epsilon\bigr) \hat A_i \right]
+\end{aligned}
+$$
+
+在更新起点 $\theta=\theta_{\mathrm{old}}$，有 $\rho_{i,t}=1$，裁剪尚未生效；且 $\nabla_\theta\rho_{i,t}(\theta) = \rho_{i,t}(\theta) \nabla_\theta\log\pi_\theta(y_{i,t}\mid s_{i,t})$。此时：
+$$
+\left. \nabla_\theta S_{\theta}(x, y_1, \cdots, y_G) \right|_{\theta_{\mathrm{old}}} = \frac{1}{G} \sum_{i=1}^{G} \frac{\hat A_i}{L_i} \sum_{t=1}^{L_i} \left. \nabla_\theta \log\pi_\theta(y_{i,t}\mid x,y_{i,<t}) \right|_{\theta_{\mathrm{old}}}.
+$$
+
+由于：
+
+$$
+\log\pi_\theta(y_i\mid x) = \sum_{t=1}^{L_i} \log\pi_\theta(y_{i,t}\mid x,y_{i,<t}), 
+$$
+
+这一梯度也可写为：
+
+$$
+\left. \nabla_\theta S_{\theta}(x, y_1, \cdots, y_G) \right|_{\theta_{\mathrm{old}}} = \frac{1}{G} \sum_{i=1}^{G} \frac{\hat A_i}{L_i} \left. \nabla_\theta\log\pi_\theta(y_i\mid x) \right|_{\theta_{\mathrm{old}}}.
+$$
+
+因此，组相对优势通过回答的对数概率梯度产生更新。奖励及组统计量作为固定权重使用，梯度通过当前策略的概率计算路径传播。
+
+-------
+
+#### 2.4 参考策略 KL 正则与完整目标
+
+**（1）参考策略的作用**
+
+概率比 $\rho_{i,t}$ 使用旧策略作为参照，用于本轮更新控制。另设参考策略 $\pi_{\mathrm{ref}}$，使用KL 散度用于对偏离参考行为的程度施加正则代价。
+
+在原始 GRPO 中，先由任务奖励构造组相对优势，再将 KL 惩罚作为独立项加入目标。它与前面介绍的“先将参考策略惩罚加入训练奖励，再计算 GAE”的 PPO 配置，在计算路径上有所区别。[DeepSeekMath 原论文，§4.1.1](https://arxiv.org/pdf/2402.03300#page=13)
+
+**（2）原论文采用的逐 token KL 惩罚形式**
+
+首先明确符号定义：
+
+$$
+x \sim D_{prompt} \xrightarrow{同一提示词下采样一组回答} \{y_1, \dots, y_G\}
+\\[10pt]
+\pi_{\theta}(y_i \ | \ x) = \prod_{t=1}^{L_i} \pi_{\theta}(y_{i,t} \ | \ x, y_{i, <t}) \overset{s_{i,t} = \{x, \ y_{i, <t}\} }{=} \prod_{t=1}^{L_i} \pi_{\theta}(y_{i,t} \ | \ s_{i,t})
+$$
+
+加入 KL 惩罚的损失：
+
+$$
+\mathcal J_{\mathrm{GRPO}}(\theta) = \mathbb E_{\substack{ x\sim\mathcal D_{\mathrm{prompt}}\\ y_1,\ldots,y_G\sim\pi_{\mathrm{old}}(\cdot\mid x) }}
+\frac{1}{G} \sum_{i=1}^{G} \frac{1}{L_i} \sum_{t=1}^{L_i} 
+\left\{
+\min \left[ \rho_{i,t}(\theta)\hat A_i,\; \operatorname{clip} \bigl(\rho_{i,t}(\theta),1-\epsilon,1+\epsilon\bigr) \hat A_i \right] - \beta D_{KL}(\pi_{\theta}(\cdot \mid s_{i,t}) \| \pi_{\text{ref}}(\cdot \mid s_{i,t}))
+\right\}
+$$
+
+
+首先介绍一种特殊的 KL 散度的构造方法：
+
+$$
+D_{\text{KL}}(P \ \| \ Q) = \mathbb{E}_{a \sim P} \left[-\log{\frac{Q(a)}{P(a)}}\right]
+$$
+
+由于恒等式：
+
+$$
+\begin{aligned}
+\mathbb E_{a\sim P}[\frac{Q(a)}{P(a)}-1]
+&=
+\sum_a P(a)
+\left(\frac{Q(a)}{P(a)}-1\right)\\[6pt]
+&=
+\sum_a Q(a)-\sum_a P(a)\\[6pt]
+&=1-1=0.
+\end{aligned}
+$$
+
+将它加入期望不会改变结果：
+
+$$
+D_{\mathrm{KL}}(P\|Q) = \mathbb E_{a\sim P} \left[ \frac{Q(a)}{P(a)} -\log\frac{Q(a)}{P(a)} -1 \right].
+$$
+
+而根据不等式：$\log u\le u-1$：
+
+$$
+\frac{Q(a)}{P(a)} -\log\frac{Q(a)}{P(a)} -1 \ge 0
+$$
+
+因此，这种构造在保持期望不变的同时，使**每个样本的估计值也非负**。其中新增的零均值项 $u-1$ 称为控制变量，可用于调整估计方差。
+
+我们回到 GRPO 原文，常规 KL 惩罚：
+
+$$
+\begin{aligned}
+D_{\mathrm{KL}} \left( \pi_\theta(\cdot\mid s_{i,t}) \Vert \pi_{\mathrm{ref}}(\cdot\mid s_{i,t}) \right) 
+&= \mathbb{E}_{\pi_\theta(\cdot\mid s_{i,t})} \left[-\log{\frac{\pi_{\mathrm{ref}}(\cdot\mid s_{i,t})}{\pi_\theta(\cdot\mid s_{i,t})}}\right]
+\end{aligned}
+$$
+
+令：
+
+$$
+d_{i,t}(\theta) =\frac{\pi_{\mathrm{ref}}(\cdot\mid s_{i,t})}{\pi_\theta(\cdot\mid s_{i,t})} - \log{\frac{\pi_{\mathrm{ref}}(\cdot\mid s_{i,t})}{\pi_\theta(\cdot\mid s_{i,t})}} - 1
+$$
+
+根据上面的推导，有：
+
+$$
+D_{\mathrm{KL}} \left( \pi_\theta(\cdot\mid s_{i,t}) \Vert \pi_{\mathrm{ref}}(\cdot\mid s_{i,t}) \right) = \mathbb{E}_{\pi_\theta(\cdot\mid s_{i,t})} \left[ d_{i,t}(\theta) \right]
+$$
+
+原文使用单个采样 token 进行估计：
+
+$$
+\begin{aligned}
+z_{i,t}(\theta) &= \frac{ \pi_{\mathrm{ref}}(y_{i,t}\mid s_{i,t}) }{ \pi_\theta(y_{i,t}\mid s_{i,t}) }
+\\[8pt]
+\hat{d}_{i,t}(\theta) &= z_{i,t}(\theta) - \log z_{i,t}(\theta) - 1
+\end{aligned}
+$$
+
+**（3）完整代理目标**
+
+将裁剪策略项与 KL 惩罚组合，得到原始 GRPO 的目标结构：
+
+$$
+\boxed{ \mathcal J_{\mathrm{GRPO}}(\theta) = \mathbb E_{\substack{ x\sim\mathcal D_{\mathrm{prompt}}\\ y_1,\ldots,y_G\sim\pi_{\mathrm{old}}(\cdot\mid x) }} \left[ \frac{1}{G} \sum_{i=1}^{G} \frac{1}{L_i} \sum_{t=1}^{L_i} \left( \ell_{i,t}^{\mathrm{CLIP}}(\theta) - \beta  \ \widehat d_{i,t}(\theta) \right) \right] }
+$$
+
+其中：
+
+$$
+\begin{aligned}
+\ell_{i,t}^{\mathrm{CLIP}}(\theta) 
+&=
+\min \left[ \rho_{i,t}(\theta)\hat A_i,\; \operatorname{clip} \bigl(\rho_{i,t}(\theta),1-\epsilon,1+\epsilon\bigr) \hat A_i \right]
+\\[8pt]
+\widehat d_{i,t}(\theta) 
+&=
+\frac{ \pi_{\mathrm{ref}}(y_{i,t}\mid s_{i,t}) }{ \pi_\theta(y_{i,t}\mid s_{i,t}) } - \log \frac{ \pi_{\mathrm{ref}}(y_{i,t}\mid s_{i,t}) }{ \pi_\theta(y_{i,t}\mid s_{i,t}) } -1
+\end{aligned}
+$$
+
+采用梯度下降时，构造的**代理损失**为：
+
+$$
+\begin{aligned}
+\mathcal L_{\mathrm{GRPO}}(\theta) 
+&= -\widehat{\mathcal J}_{\mathrm{GRPO}}(\theta)
+\\[8pt]
+&=- \frac{1}{G} \sum_{i=1}^{G} \frac{1}{L_i} \sum_{t=1}^{L_i} \left( \ell_{i,t}^{\mathrm{CLIP}}(\theta) - \beta  \ \widehat d_{i,t}(\theta) \right)
+\end{aligned}
+$$
+
+其中，$\widehat{\mathcal J}$ 表示在有限采样批次上的**经验目标（代理目标）**，它满足：
+
+$$
+\mathbb E_{\substack{ x\sim\mathcal D_{\mathrm{prompt}}\\ y_1,\ldots,y_G\sim\pi_{\mathrm{old}}(\cdot\mid x) }} \left[ \nabla_{\theta } \mathcal L_{\mathrm{GRPO}}(\theta)  \right] =  \nabla_{\theta } L_{\text{true} \ \mathrm{GRPO}}(\theta)
+$$
+
+------------
+
