@@ -3076,7 +3076,7 @@ $$
    最值得先读 §3.2 Dynamic Sampling。论文明确指出：随着全对组增多，每批提供有效策略梯度的题目减少，影响样本效率。
 
    做法是过滤全对、全错组，继续采样，直到凑够具有奖励差异的有效组。它保证了每次更新的有效组数量，但被过滤回答的生成成本已经付出。
-2. **Act Only When It Pays: Efficient Reinforcement Learning for LLM Reasoning via Selective Rollouts **(https://arxiv.org/abs/2506.02177)，2025；方法名 GRESO
+2. **Act Only When It Pays: Efficient Reinforcement Learning for LLM Reasoning via Selective Rollouts**(https://arxiv.org/abs/2506.02177)，2025；方法名 GRESO
 
    进一步针对上述生成成本：利用题目过去的奖励变化，在生成之前预测并跳过可能仍为零方差的题目，同时保留一定探索概率，避免永久排除题目。
 
@@ -3086,7 +3086,7 @@ $$
    这篇选择保留这些样本，修改优势计算：对正确和错误回答提供不同方向的反馈，再结合 token 层面的熵调整信号。
 
    它强调一个重要区别：零方差组在原 GRPO 优势公式下没有信号，不代表这些回答本身没有学习价值。
-4. **Save Your Saturated Data: Learning Beyond Reward Saturation in Group-Based RL **(https://arxiv.org/abs/2609.33126)，2026 年预印本
+4. **Save Your Saturated Data: Learning Beyond Reward Saturation in Group-Based RL**(https://arxiv.org/abs/2609.33126)，2026 年预印本
 
    研究场景与你描述的“初始模型已经很强，或者训练后期大量全对”尤其接近。论文比较从数据、生成、奖励和优势四个环节恢复学习信号的方法。
 
